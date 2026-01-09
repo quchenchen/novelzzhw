@@ -1,5 +1,5 @@
 import { Card, Space, Tag, Typography, Popconfirm } from 'antd';
-import { EditOutlined, DeleteOutlined, UserOutlined, BankOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, UserOutlined, BankOutlined, ExportOutlined } from '@ant-design/icons';
 import { cardStyles } from './CardStyles';
 import type { Character } from '../types';
 
@@ -9,9 +9,10 @@ interface CharacterCardProps {
   character: Character;
   onEdit?: (character: Character) => void;
   onDelete: (id: string) => void;
+  onExport?: () => void;
 }
 
-export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit, onDelete }) => {
+export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit, onDelete, onExport }) => {
   const getRoleTypeColor = (roleType?: string) => {
     const roleColors: Record<string, string> = {
       'protagonist': 'blue',
@@ -49,6 +50,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit,
       }}
       actions={[
         ...(onEdit ? [<EditOutlined key="edit" onClick={() => onEdit(character)} />] : []),
+        ...(onExport ? [<ExportOutlined key="export" onClick={onExport} />] : []),
         <Popconfirm
           key="delete"
           title={`确定删除这个${isOrganization ? '组织' : '角色'}吗？`}
@@ -120,6 +122,42 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit,
                   <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center' }}>
                     <Text type="secondary" style={{ flexShrink: 0 }}>类型：</Text>
                     <Tag color="cyan">{character.organization_type}</Tag>
+                  </div>
+                )}
+                {character.power_level !== undefined && character.power_level !== null && (
+                  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center' }}>
+                    <Text type="secondary" style={{ flexShrink: 0 }}>势力等级：</Text>
+                    <Tag color={character.power_level >= 70 ? 'red' : character.power_level >= 50 ? 'orange' : 'default'}>
+                      {character.power_level}
+                    </Tag>
+                  </div>
+                )}
+                {character.location && (
+                  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-start' }}>
+                    <Text type="secondary" style={{ flexShrink: 0 }}>所在地：</Text>
+                    <Text
+                      style={{ flex: 1, minWidth: 0 }}
+                      ellipsis={{ tooltip: character.location }}
+                    >
+                      {character.location}
+                    </Text>
+                  </div>
+                )}
+                {character.color && (
+                  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-start' }}>
+                    <Text type="secondary" style={{ flexShrink: 0 }}>代表颜色：</Text>
+                    <Text style={{ flex: 1, minWidth: 0 }}>{character.color}</Text>
+                  </div>
+                )}
+                {character.motto && (
+                  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'flex-start' }}>
+                    <Text type="secondary" style={{ flexShrink: 0 }}>格言：</Text>
+                    <Text
+                      style={{ flex: 1, minWidth: 0 }}
+                      ellipsis={{ tooltip: character.motto }}
+                    >
+                      {character.motto}
+                    </Text>
                   </div>
                 )}
                 {character.organization_purpose && (

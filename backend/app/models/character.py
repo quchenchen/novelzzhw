@@ -1,5 +1,5 @@
 """角色数据模型"""
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Integer
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid
@@ -14,8 +14,8 @@ class Character(Base):
     
     # 基本信息
     name = Column(String(100), nullable=False, comment="角色/组织名称")
-    age = Column(String(20), comment="年龄")
-    gender = Column(String(20), comment="性别")
+    age = Column(String(50), comment="年龄")
+    gender = Column(String(50), comment="性别")
     is_organization = Column(Boolean, default=False, comment="是否为组织")
     
     # 角色类型：protagonist(主角)/supporting(配角)/antagonist(反派)
@@ -31,6 +31,11 @@ class Character(Base):
     organization_type = Column(String(100), comment="组织类型")
     organization_purpose = Column(String(500), comment="组织目的")
     organization_members = Column(Text, comment="组织成员(JSON)")
+    
+    # 职业相关字段（冗余字段，用于提升查询性能）
+    main_career_id = Column(String(36), ForeignKey("careers.id", ondelete="SET NULL"), comment="主职业ID")
+    main_career_stage = Column(Integer, comment="主职业当前阶段")
+    sub_careers = Column(Text, comment="副职业列表(JSON): [{\"career_id\": \"xxx\", \"stage\": 3}, ...]")
     
     # 其他
     avatar_url = Column(String(500), comment="头像URL")

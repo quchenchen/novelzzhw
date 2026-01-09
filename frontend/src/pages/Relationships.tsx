@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Card, Table, Tag, Button, Space, message, Modal, Form, Select, Slider, Input, Tabs } from 'antd';
-import { PlusOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Button, Space, message, Modal, Form, Select, Slider, Input, Tabs, AutoComplete } from 'antd';
+import { PlusOutlined, ApartmentOutlined, UserOutlined, EditOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import axios from 'axios';
 
@@ -40,7 +40,10 @@ export default function Relationships() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingRelationship, setEditingRelationship] = useState<Relationship | null>(null);
   const [form] = Form.useForm();
+  const [modal, contextHolder] = Modal.useModal();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -103,8 +106,51 @@ export default function Relationships() {
     }
   };
 
+  const handleEditRelationship = (record: Relationship) => {
+    setEditingRelationship(record);
+    setIsEditMode(true);
+    form.setFieldsValue({
+      character_from_id: record.character_from_id,
+      character_to_id: record.character_to_id,
+      relationship_name: record.relationship_name,
+      intimacy_level: record.intimacy_level,
+      status: record.status,
+      description: record.description,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleUpdateRelationship = async (values: {
+    character_from_id: string;
+    character_to_id: string;
+    relationship_name: string;
+    intimacy_level: number;
+    status: string;
+    description?: string;
+  }) => {
+    if (!editingRelationship) return;
+    
+    try {
+      await axios.put(`/api/relationships/${editingRelationship.id}`, {
+        relationship_name: values.relationship_name,
+        intimacy_level: values.intimacy_level,
+        status: values.status,
+        description: values.description,
+      });
+      message.success('关系更新成功');
+      setIsModalOpen(false);
+      setIsEditMode(false);
+      setEditingRelationship(null);
+      form.resetFields();
+      loadData();
+    } catch (error) {
+      message.error('更新关系失败');
+      console.error(error);
+    }
+  };
+
   const handleDeleteRelationship = async (id: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除',
       content: '确定要删除这条关系吗？',
       centered: true,
@@ -133,6 +179,7 @@ export default function Relationships() {
     if (level >= 75) return 'green';
     if (level >= 50) return 'blue';
     if (level >= 25) return 'orange';
+    if (level >= 0) return 'volcano';
     return 'red';
   };
 
@@ -217,16 +264,26 @@ export default function Relationships() {
       title: '操作',
       key: 'action',
       render: (_: unknown, record: Relationship) => (
-        <Button
-          type="link"
-          danger
-          size="small"
-          onClick={() => handleDeleteRelationship(record.id)}
-        >
-          删除
-        </Button>
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEditRelationship(record)}
+          >
+            编辑
+          </Button>
+          <Button
+            type="link"
+            danger
+            size="small"
+            onClick={() => handleDeleteRelationship(record.id)}
+          >
+            删除
+          </Button>
+        </Space>
       ),
-      width: 80,
+      width: 140,
       fixed: isMobile ? ('right' as const) : undefined,
     },
   ];
@@ -248,11 +305,13 @@ export default function Relationships() {
   };
 
   return (
-    <div>
-      <Card
+    <>
+      {contextHolder}
+      <div>
+        <Card
         title={
           <Space wrap>
-            <TeamOutlined />
+            <ApartmentOutlined />
             <span style={{ fontSize: isMobile ? 14 : 16 }}>关系管理</span>
             {!isMobile && <Tag color="blue">{currentProject?.title}</Tag>}
           </Space>
@@ -344,10 +403,12 @@ export default function Relationships() {
       </Card>
 
       <Modal
-        title="添加关系"
+        title={isEditMode ? '编辑关系' : '添加关系'}
         open={isModalOpen}
         onCancel={() => {
           setIsModalOpen(false);
+          setIsEditMode(false);
+          setEditingRelationship(null);
           form.resetFields();
         }}
         footer={null}
@@ -359,7 +420,7 @@ export default function Relationships() {
         <Form
           form={form}
           layout="vertical"
-          onFinish={handleCreateRelationship}
+          onFinish={isEditMode ? handleUpdateRelationship : handleCreateRelationship}
         >
           <Form.Item
             name="character_from_id"
@@ -369,6 +430,7 @@ export default function Relationships() {
             <Select
               placeholder="选择角色"
               showSearch
+              disabled={isEditMode}
               filterOption={(input, option) =>
                 (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
@@ -383,14 +445,15 @@ export default function Relationships() {
             label="关系类型"
             rules={[{ required: true, message: '请选择或输入关系类型' }]}
           >
-            <Select
-              placeholder="选择预定义类型或输入自定义"
-              showSearch
-              allowClear
+            <AutoComplete
+              placeholder="选择预定义类型或输入自定义关系"
               options={relationshipTypes.map(t => ({
                 label: `${t.icon || ''} ${t.name} (${categoryLabels[t.category]})`,
                 value: t.name
               }))}
+              filterOption={(inputValue, option) =>
+                option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+              }
             />
           </Form.Item>
 
@@ -402,6 +465,7 @@ export default function Relationships() {
             <Select
               placeholder="选择角色"
               showSearch
+              disabled={isEditMode}
               filterOption={(input, option) =>
                 (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
@@ -417,9 +481,15 @@ export default function Relationships() {
             initialValue={50}
           >
             <Slider
-              min={0}
+              min={-100}
               max={100}
-              marks={{ 0: '0', 25: '25', 50: '50', 75: '75', 100: '100' }}
+              marks={{
+                '-100': '-100',
+                '-50': '-50',
+                0: '0',
+                50: '50',
+                100: '100'
+              }}
             />
           </Form.Item>
 
@@ -442,14 +512,20 @@ export default function Relationships() {
 
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-              <Button onClick={() => setIsModalOpen(false)}>取消</Button>
+              <Button onClick={() => {
+                setIsModalOpen(false);
+                setIsEditMode(false);
+                setEditingRelationship(null);
+                form.resetFields();
+              }}>取消</Button>
               <Button type="primary" htmlType="submit">
-                创建
+                {isEditMode ? '更新' : '创建'}
               </Button>
             </Space>
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+      </div>
+    </>
   );
 }

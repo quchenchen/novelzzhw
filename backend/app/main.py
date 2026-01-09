@@ -12,6 +12,7 @@ from app.database import close_db, _session_stats
 from app.logger import setup_logging, get_logger
 from app.middleware import RequestIDMiddleware
 from app.middleware.auth_middleware import AuthMiddleware
+from app.mcp import mcp_client, register_status_sync
 
 setup_logging(
     level=config_settings.log_level,
@@ -26,10 +27,23 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    logger.info("应用启动，等待用户登录...")
+    # 注册MCP状态同步服务
+    register_status_sync()
+    
+    logger.info("应用启动完成")
     
     yield
+    
+    # 清理MCP插件
+    await mcp_client.cleanup()
+    
+    # 清理HTTP客户端池
+    from app.services.ai_service import cleanup_http_clients
+    await cleanup_http_clients()
+    
+    # 关闭数据库连接
     await close_db()
+    
     logger.info("应用已关闭")
 
 
@@ -114,22 +128,30 @@ async def db_session_stats():
 from app.api import (
     projects, outlines, characters, chapters,
     wizard_stream, relationships, organizations,
-    auth, users, settings, writing_styles, memories
+    auth, users, settings, writing_styles, memories,
+    mcp_plugins, admin, inspiration, prompt_templates,
+    changelog, careers
 )
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 app.include_router(projects.router, prefix="/api")
 app.include_router(wizard_stream.router, prefix="/api")
+app.include_router(inspiration.router, prefix="/api")
 app.include_router(outlines.router, prefix="/api")
 app.include_router(characters.router, prefix="/api")
+app.include_router(careers.router, prefix="/api")  # 职业管理API
 app.include_router(chapters.router, prefix="/api")
 app.include_router(relationships.router, prefix="/api")
 app.include_router(organizations.router, prefix="/api")
 app.include_router(writing_styles.router, prefix="/api")
 app.include_router(memories.router)  # 记忆管理API (已包含/api前缀)
+app.include_router(mcp_plugins.router, prefix="/api")  # MCP插件管理API
+app.include_router(prompt_templates.router, prefix="/api")  # 提示词模板管理API
+app.include_router(changelog.router, prefix="/api")  # 更新日志API
 
 static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():

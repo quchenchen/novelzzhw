@@ -1,7 +1,7 @@
 """导入导出服务"""
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.project import Project
@@ -77,6 +77,8 @@ class ImportExportService:
             "chapter_count": project.chapter_count,
             "narrative_perspective": project.narrative_perspective,
             "character_count": project.character_count,
+            "outline_mode": project.outline_mode, 
+            "user_id": project.user_id,
             "created_at": project.created_at.isoformat() if project.created_at else None,
         }
         
@@ -143,18 +145,41 @@ class ImportExportService:
         )
         chapters = result.scalars().all()
         
-        return [
-            ChapterExportData(
+        # 构建大纲ID到标题的映射
+        outline_mapping = {}
+        if chapters:
+            outline_ids = [ch.outline_id for ch in chapters if ch.outline_id]
+            if outline_ids:
+                outline_result = await db.execute(
+                    select(Outline).where(Outline.id.in_(outline_ids))
+                )
+                outlines = outline_result.scalars().all()
+                outline_mapping = {ol.id: ol.title for ol in outlines}
+        
+        exported_chapters = []
+        for ch in chapters:
+            # 解析expansion_plan JSON
+            expansion_plan = None
+            if ch.expansion_plan:
+                try:
+                    expansion_plan = json.loads(ch.expansion_plan) if isinstance(ch.expansion_plan, str) else ch.expansion_plan
+                except:
+                    expansion_plan = None
+            
+            exported_chapters.append(ChapterExportData(
                 title=ch.title,
                 content=ch.content,
                 summary=ch.summary,
                 chapter_number=ch.chapter_number,
                 word_count=ch.word_count or 0,
                 status=ch.status,
-                created_at=ch.created_at.isoformat() if ch.created_at else None
-            )
-            for ch in chapters
-        ]
+                created_at=ch.created_at.isoformat() if ch.created_at else None,
+                outline_title=outline_mapping.get(ch.outline_id) if ch.outline_id else None,
+                sub_index=ch.sub_index,
+                expansion_plan=expansion_plan
+            ))
+        
+        return exported_chapters
     
     @staticmethod
     async def _export_characters(project_id: str, db: AsyncSession) -> List[CharacterExportData]:
@@ -315,10 +340,19 @@ class ImportExportService:
     
     @staticmethod
     async def _export_writing_styles(project_id: str, db: AsyncSession) -> List[WritingStyleExportData]:
-        """导出写作风格"""
+        """导出写作风格（用户自定义风格）"""
+        # 获取项目所属用户
+        project_result = await db.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        if not project:
+            return []
+        
+        # 导出该用户的自定义风格（不包括全局预设）
         result = await db.execute(
             select(WritingStyle)
-            .where(WritingStyle.project_id == project_id)
+            .where(WritingStyle.user_id == project.user_id)
             .order_by(WritingStyle.order_index)
         )
         styles = result.scalars().all()
@@ -423,7 +457,8 @@ class ImportExportService:
     @staticmethod
     async def import_project(
         data: Dict,
-        db: AsyncSession
+        db: AsyncSession,
+        user_id: str
     ) -> ImportResult:
         """
         导入项目数据（创建新项目）
@@ -431,6 +466,7 @@ class ImportExportService:
         Args:
             data: 导入的JSON数据
             db: 数据库会话
+            user_id: 目标用户ID（导入后的项目归属）
             
         Returns:
             ImportResult: 导入结果
@@ -456,6 +492,7 @@ class ImportExportService:
             # 创建项目
             project_data = data["project"]
             new_project = Project(
+                user_id=user_id,  # 设置为当前用户ID
                 title=project_data.get("title"),
                 description=project_data.get("description"),
                 theme=project_data.get("theme"),
@@ -469,6 +506,7 @@ class ImportExportService:
                 chapter_count=project_data.get("chapter_count"),
                 narrative_perspective=project_data.get("narrative_perspective"),
                 character_count=project_data.get("character_count"),
+                outline_mode=project_data.get("outline_mode", "one-to-many"),  # ✅ 导入大纲模式，默认为一对多
                 current_words=project_data.get("current_words", 0),  # 保留原项目的字数
                 wizard_step=4,  # 导入的项目设置为向导完成状态
                 wizard_status="completed"  # 标记向导已完成
@@ -478,26 +516,26 @@ class ImportExportService:
             
             logger.info(f"创建项目成功: {new_project.id}")
             
-            # 导入章节
-            chapters_count = await ImportExportService._import_chapters(
-                new_project.id, data.get("chapters", []), db
-            )
-            statistics["chapters"] = chapters_count
-            logger.info(f"导入章节数: {chapters_count}")
-            
-            # 导入角色（包括组织）
+            # 导入角色（包括组织）- 需要先导入角色，因为大纲可能需要角色信息
             char_mapping = await ImportExportService._import_characters(
                 new_project.id, data.get("characters", []), db
             )
             statistics["characters"] = len(char_mapping)
             logger.info(f"导入角色数: {len(char_mapping)}")
             
-            # 导入大纲
-            outlines_count = await ImportExportService._import_outlines(
+            # 导入大纲 - 需要在章节之前导入，以便建立关联
+            outline_mapping = await ImportExportService._import_outlines(
                 new_project.id, data.get("outlines", []), db
             )
-            statistics["outlines"] = outlines_count
-            logger.info(f"导入大纲数: {outlines_count}")
+            statistics["outlines"] = len(outline_mapping)
+            logger.info(f"导入大纲数: {len(outline_mapping)}")
+            
+            # 导入章节 - 使用大纲映射重建关联关系
+            chapters_count = await ImportExportService._import_chapters(
+                new_project.id, data.get("chapters", []), outline_mapping, db
+            )
+            statistics["chapters"] = chapters_count
+            logger.info(f"导入章节数: {chapters_count}")
             
             # 导入关系
             relationships_count = await ImportExportService._import_relationships(
@@ -554,11 +592,23 @@ class ImportExportService:
     async def _import_chapters(
         project_id: str,
         chapters_data: List[Dict],
+        outline_mapping: Dict[str, str],
         db: AsyncSession
     ) -> int:
         """导入章节"""
         count = 0
         for ch_data in chapters_data:
+            # 根据大纲标题查找对应的新大纲ID
+            outline_id = None
+            outline_title = ch_data.get("outline_title")
+            if outline_title and outline_title in outline_mapping:
+                outline_id = outline_mapping[outline_title]
+            
+            # 处理expansion_plan
+            expansion_plan = ch_data.get("expansion_plan")
+            if expansion_plan and isinstance(expansion_plan, dict):
+                expansion_plan = json.dumps(expansion_plan, ensure_ascii=False)
+            
             chapter = Chapter(
                 project_id=project_id,
                 title=ch_data.get("title"),
@@ -566,7 +616,10 @@ class ImportExportService:
                 summary=ch_data.get("summary"),
                 chapter_number=ch_data.get("chapter_number"),
                 word_count=ch_data.get("word_count", 0),
-                status=ch_data.get("status", "draft")
+                status=ch_data.get("status", "draft"),
+                outline_id=outline_id,
+                sub_index=ch_data.get("sub_index"),
+                expansion_plan=expansion_plan
             )
             db.add(chapter)
             count += 1
@@ -585,7 +638,7 @@ class ImportExportService:
         for char_data in characters_data:
             # 处理traits
             traits = char_data.get("traits")
-            if traits and isinstance(traits, list):
+            if isinstance(traits, list):
                 traits = json.dumps(traits, ensure_ascii=False)
             
             character = Character(
@@ -613,9 +666,10 @@ class ImportExportService:
         project_id: str,
         outlines_data: List[Dict],
         db: AsyncSession
-    ) -> int:
-        """导入大纲"""
-        count = 0
+    ) -> Dict[str, str]:
+        """导入大纲，返回标题到ID的映射"""
+        outline_mapping = {}
+        
         for ol_data in outlines_data:
             outline = Outline(
                 project_id=project_id,
@@ -625,9 +679,10 @@ class ImportExportService:
                 order_index=ol_data.get("order_index")
             )
             db.add(outline)
-            count += 1
+            await db.flush()  # 获取ID
+            outline_mapping[ol_data.get("title")] = outline.id
         
-        return count
+        return outline_mapping
     
     @staticmethod
     async def _import_relationships(
@@ -751,11 +806,30 @@ class ImportExportService:
         styles_data: List[Dict],
         db: AsyncSession
     ) -> int:
-        """导入写作风格"""
+        """导入写作风格（用户自定义风格）"""
+        # 获取项目所属用户
+        project_result = await db.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        if not project:
+            return 0
+        
         count = 0
         for style_data in styles_data:
+            # 检查是否已存在同名风格（避免重复导入）
+            existing = await db.execute(
+                select(WritingStyle).where(
+                    WritingStyle.user_id == project.user_id,
+                    WritingStyle.name == style_data.get("name")
+                )
+            )
+            if existing.scalar_one_or_none():
+                logger.debug(f"风格 {style_data.get('name')} 已存在，跳过导入")
+                continue
+            
             style = WritingStyle(
-                project_id=project_id,
+                user_id=project.user_id,  # 使用 user_id 而不是 project_id
                 name=style_data.get("name"),
                 style_type=style_data.get("style_type"),
                 preset_id=style_data.get("preset_id"),
@@ -767,3 +841,402 @@ class ImportExportService:
             count += 1
         
         return count
+    
+    @staticmethod
+    async def export_characters(
+        character_ids: List[str],
+        db: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        导出角色/组织卡片
+        
+        Args:
+            character_ids: 要导出的角色/组织ID列表
+            db: 数据库会话
+            
+        Returns:
+            Dict: 导出的角色数据
+        """
+        logger.info(f"开始导出角色/组织: {len(character_ids)} 个")
+        
+        # 查询角色数据
+        result = await db.execute(
+            select(Character).where(Character.id.in_(character_ids))
+        )
+        characters = result.scalars().all()
+        
+        if not characters:
+            raise ValueError("未找到指定的角色/组织")
+        
+        # 导出角色数据
+        exported_characters = []
+        for char in characters:
+            # 解析 traits
+            traits = None
+            if char.traits:
+                try:
+                    traits = json.loads(char.traits) if isinstance(char.traits, str) else char.traits
+                except:
+                    traits = None
+            
+            # 基础角色数据
+            char_data = {
+                "name": char.name,
+                "age": char.age,
+                "gender": char.gender,
+                "is_organization": char.is_organization or False,
+                "role_type": char.role_type,
+                "personality": char.personality,
+                "background": char.background,
+                "appearance": char.appearance,
+                "relationships": char.relationships,
+                "traits": traits,
+                "organization_type": char.organization_type,
+                "organization_purpose": char.organization_purpose,
+                "organization_members": char.organization_members,
+                "avatar_url": char.avatar_url,
+                "main_career_id": char.main_career_id,
+                "main_career_stage": char.main_career_stage,
+                "sub_careers": char.sub_careers,
+                "created_at": char.created_at.isoformat() if char.created_at else None
+            }
+            
+            # 如果是组织，添加组织专属字段
+            if char.is_organization:
+                org_result = await db.execute(
+                    select(Organization).where(Organization.character_id == char.id)
+                )
+                org = org_result.scalar_one_or_none()
+                
+                if org:
+                    char_data.update({
+                        "power_level": org.power_level,
+                        "location": org.location,
+                        "motto": org.motto,
+                        "color": org.color
+                    })
+            
+            exported_characters.append(char_data)
+        
+        export_data = {
+            "version": ImportExportService.SUPPORTED_VERSION,
+            "export_time": datetime.utcnow().isoformat(),
+            "export_type": "characters",
+            "count": len(exported_characters),
+            "data": exported_characters
+        }
+        
+        logger.info(f"角色/组织导出完成: {len(exported_characters)} 个")
+        return export_data
+    
+    @staticmethod
+    async def import_characters(
+        data: Dict,
+        project_id: str,
+        user_id: str,
+        db: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        导入角色/组织卡片
+        
+        Args:
+            data: 导入的JSON数据
+            project_id: 目标项目ID
+            user_id: 用户ID
+            db: 数据库会话
+            
+        Returns:
+            Dict: 导入结果
+        """
+        from app.models.career import CharacterCareer, Career
+        
+        warnings = []
+        imported_characters = []
+        imported_organizations = []
+        skipped = []
+        errors = []
+        
+        try:
+            # 验证数据格式
+            if "data" not in data:
+                raise ValueError("导入数据格式错误：缺少data字段")
+            
+            characters_data = data["data"]
+            if not isinstance(characters_data, list):
+                raise ValueError("导入数据格式错误：data字段必须是数组")
+            
+            # 验证项目权限
+            project_result = await db.execute(
+                select(Project).where(
+                    Project.id == project_id,
+                    Project.user_id == user_id
+                )
+            )
+            project = project_result.scalar_one_or_none()
+            if not project:
+                raise ValueError("项目不存在或无权访问")
+            
+            logger.info(f"开始导入 {len(characters_data)} 个角色/组织到项目 {project_id}")
+            
+            # 处理每个角色/组织
+            for idx, char_data in enumerate(characters_data):
+                try:
+                    name = char_data.get("name")
+                    if not name:
+                        errors.append(f"第{idx+1}个角色缺少name字段")
+                        continue
+                    
+                    # 检查重复名称
+                    existing_result = await db.execute(
+                        select(Character).where(
+                            Character.project_id == project_id,
+                            Character.name == name
+                        )
+                    )
+                    existing = existing_result.scalar_one_or_none()
+                    
+                    if existing:
+                        warnings.append(f"角色'{name}'已存在，已跳过")
+                        skipped.append(name)
+                        continue
+                    
+                    # 处理traits
+                    traits = char_data.get("traits")
+                    if isinstance(traits, list):
+                        traits = json.dumps(traits, ensure_ascii=False)
+                    
+                    is_organization = char_data.get("is_organization", False)
+                    
+                    # 创建角色
+                    character = Character(
+                        project_id=project_id,
+                        name=name,
+                        age=char_data.get("age"),
+                        gender=char_data.get("gender"),
+                        is_organization=is_organization,
+                        role_type=char_data.get("role_type"),
+                        personality=char_data.get("personality"),
+                        background=char_data.get("background"),
+                        appearance=char_data.get("appearance"),
+                        relationships=char_data.get("relationships"),
+                        traits=traits,
+                        organization_type=char_data.get("organization_type"),
+                        organization_purpose=char_data.get("organization_purpose"),
+                        organization_members=char_data.get("organization_members"),
+                        avatar_url=char_data.get("avatar_url"),
+                        main_career_id=None,  # 职业ID需要验证后再设置
+                        main_career_stage=char_data.get("main_career_stage"),
+                        sub_careers=None  # 副职业需要验证后再设置
+                    )
+                    db.add(character)
+                    await db.flush()  # 获取character.id
+                    
+                    # 处理主职业（如果有）
+                    main_career_id = char_data.get("main_career_id")
+                    main_career_stage = char_data.get("main_career_stage")
+                    
+                    if main_career_id and not is_organization:
+                        # 验证职业是否存在
+                        career_result = await db.execute(
+                            select(Career).where(
+                                Career.id == main_career_id,
+                                Career.project_id == project_id,
+                                Career.type == 'main'
+                            )
+                        )
+                        career = career_result.scalar_one_or_none()
+                        
+                        if career:
+                            character.main_career_id = main_career_id
+                            character.main_career_stage = main_career_stage or 1
+                            
+                            # 创建职业关联
+                            char_career = CharacterCareer(
+                                character_id=character.id,
+                                career_id=main_career_id,
+                                career_type='main',
+                                current_stage=main_career_stage or 1,
+                                stage_progress=0
+                            )
+                            db.add(char_career)
+                        else:
+                            warnings.append(f"角色'{name}'的主职业ID不存在，已忽略职业信息")
+                    
+                    # 处理副职业（如果有）
+                    sub_careers = char_data.get("sub_careers")
+                    if sub_careers and not is_organization:
+                        try:
+                            sub_careers_data = json.loads(sub_careers) if isinstance(sub_careers, str) else sub_careers
+                            
+                            if isinstance(sub_careers_data, list):
+                                valid_sub_careers = []
+                                
+                                for sub_data in sub_careers_data[:2]:  # 最多2个副职业
+                                    if isinstance(sub_data, dict):
+                                        career_id = sub_data.get('career_id')
+                                        stage = sub_data.get('stage', 1)
+                                        
+                                        if career_id:
+                                            # 验证副职业是否存在
+                                            career_result = await db.execute(
+                                                select(Career).where(
+                                                    Career.id == career_id,
+                                                    Career.project_id == project_id,
+                                                    Career.type == 'sub'
+                                                )
+                                            )
+                                            career = career_result.scalar_one_or_none()
+                                            
+                                            if career:
+                                                valid_sub_careers.append({
+                                                    'career_id': career_id,
+                                                    'stage': stage
+                                                })
+                                                
+                                                # 创建副职业关联
+                                                char_career = CharacterCareer(
+                                                    character_id=character.id,
+                                                    career_id=career_id,
+                                                    career_type='sub',
+                                                    current_stage=stage,
+                                                    stage_progress=0
+                                                )
+                                                db.add(char_career)
+                                
+                                if valid_sub_careers:
+                                    character.sub_careers = json.dumps(valid_sub_careers, ensure_ascii=False)
+                                elif sub_careers_data:
+                                    warnings.append(f"角色'{name}'的副职业ID不存在，已忽略副职业信息")
+                        except Exception as e:
+                            warnings.append(f"角色'{name}'的副职业数据解析失败: {str(e)}")
+                    
+                    # 如果是组织，创建Organization记录
+                    if is_organization:
+                        organization = Organization(
+                            character_id=character.id,
+                            project_id=project_id,
+                            member_count=0,
+                            power_level=char_data.get("power_level", 50),
+                            location=char_data.get("location"),
+                            motto=char_data.get("motto"),
+                            color=char_data.get("color")
+                        )
+                        db.add(organization)
+                        await db.flush()
+                        imported_organizations.append(name)
+                    else:
+                        imported_characters.append(name)
+                    
+                    logger.info(f"导入{'组织' if is_organization else '角色'}成功: {name}")
+                    
+                except Exception as e:
+                    error_msg = f"导入角色'{char_data.get('name', f'第{idx+1}个')}'失败: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+            
+            # 提交事务
+            await db.commit()
+            
+            total = len(imported_characters) + len(imported_organizations)
+            
+            result = {
+                "success": True,
+                "message": f"成功导入 {total} 个角色/组织",
+                "statistics": {
+                    "total": len(characters_data),
+                    "imported": total,
+                    "skipped": len(skipped),
+                    "errors": len(errors)
+                },
+                "details": {
+                    "imported_characters": imported_characters,
+                    "imported_organizations": imported_organizations,
+                    "skipped": skipped,
+                    "errors": errors
+                },
+                "warnings": warnings
+            }
+            
+            logger.info(f"角色/组织导入完成: 成功{total}个，跳过{len(skipped)}个，失败{len(errors)}个")
+            return result
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"导入角色/组织失败: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"导入失败: {str(e)}",
+                "statistics": {
+                    "total": len(characters_data) if "data" in data else 0,
+                    "imported": len(imported_characters) + len(imported_organizations),
+                    "skipped": len(skipped),
+                    "errors": len(errors)
+                },
+                "details": {
+                    "imported_characters": imported_characters,
+                    "imported_organizations": imported_organizations,
+                    "skipped": skipped,
+                    "errors": errors
+                },
+                "warnings": warnings
+            }
+    
+    @staticmethod
+    def validate_characters_import(data: Dict) -> Dict[str, Any]:
+        """
+        验证角色/组织导入数据
+        
+        Args:
+            data: 导入的JSON数据
+            
+        Returns:
+            Dict: 验证结果
+        """
+        errors = []
+        warnings = []
+        
+        # 检查版本
+        version = data.get("version", "")
+        if not version:
+            errors.append("缺少版本信息")
+        elif version != ImportExportService.SUPPORTED_VERSION:
+            warnings.append(f"版本不匹配: 导入文件版本为 {version}, 当前支持版本为 {ImportExportService.SUPPORTED_VERSION}")
+        
+        # 检查导出类型
+        export_type = data.get("export_type", "")
+        if export_type != "characters":
+            errors.append(f"导出类型错误: 期望'characters'，实际'{export_type}'")
+        
+        # 检查数据字段
+        if "data" not in data:
+            errors.append("缺少data字段")
+        elif not isinstance(data["data"], list):
+            errors.append("data字段必须是数组")
+        else:
+            characters_data = data["data"]
+            
+            # 统计信息
+            character_count = sum(1 for c in characters_data if not c.get("is_organization", False))
+            org_count = sum(1 for c in characters_data if c.get("is_organization", False))
+            
+            # 检查必填字段
+            for idx, char_data in enumerate(characters_data):
+                if not char_data.get("name"):
+                    errors.append(f"第{idx+1}个角色缺少name字段")
+            
+            statistics = {
+                "characters": character_count,
+                "organizations": org_count
+            }
+        
+        if "data" not in data or errors:
+            statistics = {"characters": 0, "organizations": 0}
+        
+        return {
+            "valid": len(errors) == 0,
+            "version": version,
+            "statistics": statistics,
+            "errors": errors,
+            "warnings": warnings
+        }

@@ -12,8 +12,7 @@ import {
   Empty,
   Typography,
   Row,
-  Col,
-  Tooltip
+  Col
 } from 'antd';
 import {
   PlusOutlined,
@@ -51,26 +50,29 @@ export default function WritingStyles() {
     xl: 6,
   };
 
-  // 加载项目风格
+  // 加载风格列表 - 如果有项目则加载项目风格（包含默认标记），否则加载用户风格
   useEffect(() => {
-    if (currentProject?.id) {
-      loadProjectStyles();
-    }
+    loadStyles();
   }, [currentProject?.id]);
 
-  const loadProjectStyles = async () => {
-    if (!currentProject?.id) return;
-    
+  const loadStyles = async () => {
     try {
       setLoading(true);
-      const response = await writingStyleApi.getProjectStyles(currentProject.id);
-      // 对风格列表进行排序：默认风格优先，然后按原有顺序
+      // 如果有当前项目，使用项目API获取（包含is_default标记）
+      // 否则使用用户API获取（所有风格的is_default都是false）
+      const response = currentProject?.id
+        ? await writingStyleApi.getProjectStyles(currentProject.id)
+        : await writingStyleApi.getUserStyles();
+      
+      // 排序：默认风格优先显示
       const sortedStyles = (response.styles || []).sort((a, b) => {
-        // 默认风格排在前面
+        // 默认风格排在最前面
         if (a.is_default && !b.is_default) return -1;
         if (!a.is_default && b.is_default) return 1;
+        // 其他按原有顺序（order_index）
         return 0;
       });
+      
       setStyles(sortedStyles);
     } catch {
       message.error('加载风格列表失败');
@@ -80,11 +82,8 @@ export default function WritingStyles() {
   };
 
   const handleCreate = async (values: { name: string; description?: string; prompt_content: string }) => {
-    if (!currentProject?.id) return;
-
     try {
       const createData: WritingStyleCreate = {
-        project_id: currentProject.id,
         name: values.name,
         style_type: 'custom',
         description: values.description,
@@ -95,7 +94,7 @@ export default function WritingStyles() {
       message.success('创建成功');
       setIsCreateModalOpen(false);
       createForm.resetFields();
-      await loadProjectStyles();
+      await loadStyles();
     } catch {
       message.error('创建失败');
     }
@@ -120,7 +119,7 @@ export default function WritingStyles() {
       setIsEditModalOpen(false);
       editForm.resetFields();
       setEditingStyle(null);
-      await loadProjectStyles();
+      await loadStyles();
     } catch {
       message.error('更新失败');
     }
@@ -130,19 +129,22 @@ export default function WritingStyles() {
     try {
       await writingStyleApi.deleteStyle(styleId);
       message.success('删除成功');
-      await loadProjectStyles();
+      await loadStyles();
     } catch {
       message.error('删除失败');
     }
   };
 
   const handleSetDefault = async (styleId: number) => {
-    if (!currentProject?.id) return;
+    if (!currentProject?.id) {
+      message.warning('请先选择项目');
+      return;
+    }
     
     try {
       await writingStyleApi.setDefaultStyle(styleId, currentProject.id);
       message.success('设置默认风格成功');
-      await loadProjectStyles();
+      await loadStyles();
     } catch {
       message.error('设置失败');
     }
@@ -152,8 +154,6 @@ export default function WritingStyles() {
     createForm.resetFields();
     setIsCreateModalOpen(true);
   };
-
-  if (!currentProject) return null;
 
   const getStyleTypeColor = (styleType: string) => {
     return styleType === 'preset' ? 'blue' : 'purple';
@@ -179,7 +179,10 @@ export default function WritingStyles() {
         justifyContent: 'space-between',
         alignItems: isMobile ? 'stretch' : 'center'
       }}>
-        <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 24 }}>写作风格管理</h2>
+        <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 24 }}>
+          <EditOutlined style={{ marginRight: 8 }} />
+          写作风格管理
+        </h2>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -228,28 +231,26 @@ export default function WritingStyles() {
                     padding: '16px',
                   }}
                   actions={[
-                    <Tooltip key="default" title={style.is_default ? '当前默认' : '设为默认'}>
-                      <span
-                        onClick={() => !style.is_default && handleSetDefault(style.id)}
-                        style={{ cursor: style.is_default ? 'default' : 'pointer' }}
-                      >
-                        {style.is_default ? (
-                          <StarFilled style={{ color: '#faad14', fontSize: 18 }} />
-                        ) : (
-                          <StarOutlined style={{ fontSize: 18 }} />
-                        )}
-                      </span>
-                    </Tooltip>,
-                    <Tooltip key="edit" title={style.project_id === null ? '预设风格不可编辑' : '编辑'}>
-                      <EditOutlined
-                        onClick={() => style.project_id !== null && handleEdit(style)}
-                        style={{
-                          fontSize: 18,
-                          cursor: style.project_id === null ? 'not-allowed' : 'pointer',
-                          color: style.project_id === null ? '#ccc' : undefined
-                        }}
-                      />
-                    </Tooltip>,
+                    <span
+                      key="default"
+                      onClick={() => !style.is_default && handleSetDefault(style.id)}
+                      style={{ cursor: style.is_default ? 'default' : 'pointer' }}
+                    >
+                      {style.is_default ? (
+                        <StarFilled style={{ color: '#faad14', fontSize: 18 }} />
+                      ) : (
+                        <StarOutlined style={{ fontSize: 18 }} />
+                      )}
+                    </span>,
+                    <EditOutlined
+                      key="edit"
+                      onClick={() => style.user_id !== null && handleEdit(style)}
+                      style={{
+                        fontSize: 18,
+                        cursor: style.user_id === null ? 'not-allowed' : 'pointer',
+                        color: style.user_id === null ? '#ccc' : undefined
+                      }}
+                    />,
                     <Popconfirm
                       key="delete"
                       title="确定删除这个风格吗？"
@@ -257,23 +258,15 @@ export default function WritingStyles() {
                       onConfirm={() => handleDelete(style.id)}
                       okText="确定"
                       cancelText="取消"
-                      disabled={style.project_id === null || styles.length === 1}
+                      disabled={style.user_id === null}
                     >
-                      <Tooltip title={
-                        style.project_id === null
-                          ? '预设风格不可删除'
-                          : styles.length === 1
-                            ? '至少保留一个风格'
-                            : '删除'
-                      }>
-                        <DeleteOutlined
-                          style={{
-                            fontSize: 18,
-                            color: (style.project_id === null || styles.length === 1) ? '#ccc' : undefined,
-                            cursor: (style.project_id === null || styles.length === 1) ? 'not-allowed' : 'pointer'
-                          }}
-                        />
-                      </Tooltip>
+                      <DeleteOutlined
+                        style={{
+                          fontSize: 18,
+                          color: style.user_id === null ? '#ccc' : undefined,
+                          cursor: style.user_id === null ? 'not-allowed' : 'pointer'
+                        }}
+                      />
                     </Popconfirm>,
                   ]}
                 >

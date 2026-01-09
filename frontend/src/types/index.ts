@@ -21,6 +21,7 @@ export interface Settings {
   llm_model: string;
   temperature: number;
   max_tokens: number;
+  system_prompt?: string;
   preferences?: string;
   created_at: string;
   updated_at: string;
@@ -33,7 +34,46 @@ export interface SettingsUpdate {
   llm_model?: string;
   temperature?: number;
   max_tokens?: number;
+  system_prompt?: string;
   preferences?: string;
+}
+
+// API预设相关类型定义
+export interface APIKeyPresetConfig {
+  api_provider: string;
+  api_key: string;
+  api_base_url?: string;
+  llm_model: string;
+  temperature: number;
+  max_tokens: number;
+  system_prompt?: string;
+}
+
+export interface APIKeyPreset {
+  id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  config: APIKeyPresetConfig;
+}
+
+export interface PresetCreateRequest {
+  name: string;
+  description?: string;
+  config: APIKeyPresetConfig;
+}
+
+export interface PresetUpdateRequest {
+  name?: string;
+  description?: string;
+  config?: APIKeyPresetConfig;
+}
+
+export interface PresetListResponse {
+  presets: APIKeyPreset[];
+  total: number;
+  active_preset_id?: string;
 }
 
 // LinuxDO 授权 URL 响应
@@ -54,6 +94,7 @@ export interface Project {
   status: 'planning' | 'writing' | 'revising' | 'completed';
   wizard_status?: 'incomplete' | 'completed';
   wizard_step?: number;
+  outline_mode: 'one-to-one' | 'one-to-many';  // 大纲章节模式
   world_time_period?: string;
   world_location?: string;
   world_atmosphere?: string;
@@ -71,6 +112,7 @@ export interface ProjectCreate {
   theme?: string;
   genre?: string;
   target_words?: number;
+  outline_mode?: 'one-to-one' | 'one-to-many';  // 大纲章节模式,默认one-to-many
   wizard_status?: 'incomplete' | 'completed';
   wizard_step?: number;
   world_time_period?: string;
@@ -111,6 +153,7 @@ export interface ProjectWizardRequest {
   narrative_perspective: string;
   character_count?: number;
   target_words?: number;
+  outline_mode?: 'one-to-one' | 'one-to-many';  // 大纲章节模式
   world_building?: {
     time_period: string;
     location: string;
@@ -172,6 +215,18 @@ export interface Character {
   organization_members?: string;
   traits?: string;
   avatar_url?: string;
+  // 组织扩展字段（从Organization表关联）
+  power_level?: number;
+  location?: string;
+  motto?: string;
+  color?: string;
+  // 职业相关字段
+  main_career_id?: string;
+  main_career_stage?: number;
+  sub_careers?: Array<{
+    career_id: string;
+    stage: number;
+  }>;
   created_at: string;
   updated_at: string;
 }
@@ -190,6 +245,26 @@ export interface CharacterUpdate {
   organization_purpose?: string;
   organization_members?: string;
   traits?: string;
+  // 组织扩展字段
+  power_level?: number;
+  location?: string;
+  motto?: string;
+  color?: string;
+}
+
+// 展开规划数据结构
+export interface ExpansionPlanData {
+  key_events: string[];
+  character_focus: string[];
+  emotional_tone: string;
+  narrative_goal: string;
+  conflict_type: string;
+  estimated_words: number;
+  scenes?: Array<{
+    location: string;
+    characters: string[];
+    purpose: string;
+  }> | null;
 }
 
 // 章节类型定义
@@ -202,6 +277,11 @@ export interface Chapter {
   chapter_number: number;
   word_count: number;
   status: 'draft' | 'writing' | 'completed';
+  expansion_plan?: string; // JSON字符串，解析后为ExpansionPlanData
+  outline_id?: string; // 关联的大纲ID
+  sub_index?: number; // 大纲下的子章节序号
+  outline_title?: string; // 大纲标题（从后端联表查询获得）
+  outline_order?: number; // 大纲排序序号（从后端联表查询获得）
   created_at: string;
   updated_at: string;
 }
@@ -274,6 +354,72 @@ export interface OutlineReorderRequest {
   orders: OutlineReorderItem[];
 }
 
+// 大纲展开相关类型定义
+export interface ChapterPlanItem {
+  sub_index: number;
+  title: string;
+  plot_summary: string;
+  key_events: string[];
+  character_focus: string[];
+  emotional_tone: string;
+  narrative_goal: string;
+  conflict_type: string;
+  estimated_words: number;
+  scenes?: Array<{
+    location: string;
+    characters: string[];
+    purpose: string;
+  }>;
+}
+
+export interface OutlineExpansionRequest {
+  target_chapter_count: number;
+  expansion_strategy?: 'balanced' | 'climax' | 'detail';
+  auto_create_chapters?: boolean;
+  provider?: string;
+  model?: string;
+}
+
+export interface OutlineExpansionResponse {
+  outline_id: string;
+  outline_title: string;
+  target_chapter_count: number;
+  actual_chapter_count: number;
+  expansion_strategy: string;
+  chapter_plans: ChapterPlanItem[];
+  created_chapters?: Array<{
+    id: string;
+    chapter_number: number;
+    title: string;
+    summary: string;
+    outline_id: string;
+    sub_index: number;
+    status: string;
+  }> | null;
+}
+
+export interface BatchOutlineExpansionRequest {
+  project_id: string;
+  outline_ids?: string[];
+  chapters_per_outline: number;
+  expansion_strategy?: 'balanced' | 'climax' | 'detail';
+  auto_create_chapters?: boolean;
+  provider?: string;
+  model?: string;
+}
+
+export interface BatchOutlineExpansionResponse {
+  project_id: string;
+  total_outlines_expanded: number;
+  total_chapters_created: number;
+  expansion_results: OutlineExpansionResponse[];
+  skipped_outlines?: Array<{
+    outline_id: string;
+    outline_title: string;
+    reason: string;
+  }>;
+}
+
 export interface GenerateCharacterRequest {
   project_id: string;
   name?: string;
@@ -307,7 +453,7 @@ export interface ApiResponse<T> {
 // 写作风格类型定义
 export interface WritingStyle {
   id: number;
-  project_id: string;
+  user_id: string | null;  // NULL 表示全局预设风格
   name: string;
   style_type: 'preset' | 'custom';
   preset_id?: string;
@@ -320,13 +466,11 @@ export interface WritingStyle {
 }
 
 export interface WritingStyleCreate {
-  project_id: string;
   name: string;
-  style_type: 'preset' | 'custom';
+  style_type?: 'preset' | 'custom';
   preset_id?: string;
   description?: string;
   prompt_content: string;
-  is_default?: boolean;
 }
 
 export interface WritingStyleUpdate {
@@ -366,6 +510,7 @@ export interface WizardBasicInfo {
   narrative_perspective: string;
   character_count?: number;
   target_words?: number;
+  outline_mode?: 'one-to-one' | 'one-to-many';  // 大纲章节模式
 }
 
 // API 错误响应类型
@@ -380,14 +525,16 @@ export interface ApiError {
 
 // 章节分析任务相关类型
 export interface AnalysisTask {
-  task_id: string;
+  has_task: boolean;
+  task_id: string | null;
   chapter_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'none';
   progress: number;
-  error_message?: string;
-  created_at?: string;
-  started_at?: string;
-  completed_at?: string;
+  error_message?: string | null;
+  auto_recovered?: boolean;
+  created_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 // 分析结果 - 钩子
@@ -512,4 +659,85 @@ export interface TriggerAnalysisResponse {
   chapter_id: string;
   status: string;
   message: string;
+}
+
+// MCP 插件类型定义 - 优化后只包含必要字段
+export interface MCPPlugin {
+  id: string;
+  plugin_name: string;
+  display_name: string;
+  description?: string;
+  plugin_type: 'http' | 'stdio' | 'streamable_http' | 'sse';
+  category: string;
+
+  // HTTP类型字段
+  server_url?: string;
+  headers?: Record<string, string>;
+
+  // Stdio类型字段
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+
+  // 状态字段
+  enabled: boolean;
+  status: 'active' | 'inactive' | 'error';
+  last_error?: string;
+  last_test_at?: string;
+
+  // 时间戳
+  created_at: string;
+}
+
+export interface MCPPluginCreate {
+  plugin_name: string;
+  display_name?: string;
+  description?: string;
+  server_type: 'http' | 'stdio' | 'streamable_http' | 'sse';
+  server_url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+}
+
+export interface MCPPluginUpdate {
+  display_name?: string;
+  description?: string;
+  server_url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+}
+
+export interface MCPTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface MCPTestResult {
+  success: boolean;
+  message: string;
+  tools?: MCPTool[];
+  tools_count?: number;
+  response_time_ms?: number;
+  error?: string;
+  error_type?: string;
+  suggestions?: string[];
+}
+
+export interface MCPToolCallRequest {
+  plugin_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface MCPToolCallResponse {
+  success: boolean;
+  result?: unknown;
+  error?: string;
 }

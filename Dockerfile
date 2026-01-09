@@ -32,9 +32,11 @@ WORKDIR /app
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
     && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
-# 安装系统依赖
+# 安装系统依赖（添加数据库工具）
 RUN apt-get update && apt-get install -y \
     gcc \
+    postgresql-client \
+    netcat-traditional \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制后端依赖文件
@@ -46,21 +48,23 @@ RUN pip install --no-cache-dir torch==2.7.0 --index-url https://download.pytorch
 # 再安装其他Python依赖（使用阿里云镜像加速）
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
-# 复制后端代码
+# 复制后端代码（包含embedding模型）
 COPY backend/ ./
 
 # 从前端构建阶段复制构建好的静态文件
 COPY --from=frontend-builder /frontend/dist ./static
 
+# 复制 Alembic 迁移配置和脚本（PostgreSQL）
+COPY backend/alembic-postgres.ini ./alembic.ini
+COPY backend/alembic/postgres ./alembic
+COPY backend/scripts/entrypoint.sh /app/entrypoint.sh
+COPY backend/scripts/migrate.py ./scripts/migrate.py
+
+# 赋予执行权限
+RUN chmod +x /app/entrypoint.sh
+
 # 创建必要的目录
-RUN mkdir -p /app/data /app/logs /app/embedding
-
-# 复制预下载的Embedding模型到独立目录（避免被docker-compose的data挂载覆盖）
-# 这样可以避免首次运行时联网下载约420MB的模型文件
-COPY backend/embedding /app/embedding
-
-# 复制环境变量示例文件
-COPY backend/.env.example ./.env.example
+RUN mkdir -p /app/data /app/logs
 
 # 暴露端口
 EXPOSE 8000
@@ -80,5 +84,5 @@ ENV SENTENCE_TRANSFORMERS_HOME=/app/embedding
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-# 启动命令
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 使用 entrypoint 脚本启动（自动执行迁移）
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 from pathlib import Path
 import logging
+import os
 
 # 获取项目根目录(从backend/app/config.py向上两级)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -12,13 +13,11 @@ DATA_DIR.mkdir(exist_ok=True)
 # 配置模块使用标准logging（在logger.py初始化之前）
 config_logger = logging.getLogger(__name__)
 
-# 数据库文件路径(绝对路径)
-DB_FILE = DATA_DIR / "ai_story.db"
+# 数据库配置：PostgreSQL
+# 从环境变量获取数据库URL
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://mumuai:password@localhost:5432/mumuai_novel")
 
-# 生成数据库URL(在类外部生成，确保使用绝对路径)
-# 将Windows反斜杠转换为正斜杠，SQLite URL格式要求
-DATABASE_URL = f"sqlite+aiosqlite:///{str(DB_FILE.absolute()).replace(chr(92), '/')}"
-config_logger.debug(f"数据库文件路径: {DB_FILE}")
+config_logger.debug(f"数据库类型: PostgreSQL")
 config_logger.debug(f"数据库URL: {DATABASE_URL}")
 
 class Settings(BaseSettings):
@@ -41,8 +40,30 @@ class Settings(BaseSettings):
     # CORS配置
     cors_origins: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
     
-    # 数据库配置 - 使用预先计算好的绝对路径URL
+    # 数据库配置 - PostgreSQL
     database_url: str = DATABASE_URL
+    
+    # PostgreSQL连接池配置（优化后支持150-200并发用户）
+    database_pool_size: int = 50  # 核心连接池大小（优化：从30提升到50）
+    database_max_overflow: int = 30  # 最大溢出连接数（优化：从20提升到30）
+    database_pool_timeout: int = 90  # 连接池超时秒数（优化：从60提升到90）
+    database_pool_recycle: int = 1800  # 连接回收时间秒数（30分钟，防止长时间连接失效）
+    database_pool_pre_ping: bool = True  # 连接前ping检测，确保连接有效
+    database_pool_use_lifo: bool = True  # 使用LIFO策略提高连接复用率
+    
+    # 连接池高级配置
+    database_echo_pool: bool = False  # 是否记录连接池日志（调试用）
+    database_pool_reset_on_return: str = "rollback"  # 连接归还时的重置策略：rollback/commit/none
+    database_max_identifier_length: int = 128  # PostgreSQL标识符最大长度
+    
+    # 会话监控配置
+    database_session_max_active: int = 50  # 活跃会话警告阈值（从100降低到50）
+    database_session_leak_threshold: int = 100  # 会话泄漏严重告警阈值
+    
+    # 数据库监控配置
+    database_enable_slow_query_log: bool = True  # 启用慢查询日志
+    database_slow_query_threshold: float = 1.0  # 慢查询阈值（秒）
+    database_enable_metrics: bool = True  # 启用性能指标收集
     
     # AI服务配置
     openai_api_key: Optional[str] = None
@@ -54,7 +75,10 @@ class Settings(BaseSettings):
     default_ai_provider: str = "openai"
     default_model: str = "gpt-4"
     default_temperature: float = 0.7
-    default_max_tokens: int = 2000
+    default_max_tokens: int = 32000
+    
+    # MCP配置
+    mcp_max_rounds: int = 3  # MCP工具调用最大轮数（全局统一控制）
     
     # LinuxDO OAuth2 配置
     LINUXDO_CLIENT_ID: Optional[str] = None
@@ -85,6 +109,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # 忽略未定义的环境变量，避免验证错误
 
 
 # 创建全局配置实例

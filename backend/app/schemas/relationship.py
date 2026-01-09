@@ -1,5 +1,5 @@
 """关系管理相关的Pydantic模型"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -17,8 +17,7 @@ class RelationshipTypeResponse(BaseModel):
     description: Optional[str] = None
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============ 角色关系相关 ============
@@ -27,7 +26,7 @@ class CharacterRelationshipBase(BaseModel):
     """角色关系基础模型"""
     relationship_type_id: Optional[int] = Field(None, description="关系类型ID")
     relationship_name: Optional[str] = Field(None, description="自定义关系名称")
-    intimacy_level: int = Field(50, ge=0, le=100, description="亲密度：0-100")
+    intimacy_level: int = Field(50, ge=-100, le=100, description="亲密度：-100到100")
     status: str = Field("active", description="状态：active/broken/past/complicated")
     description: Optional[str] = Field(None, description="关系描述")
     started_at: Optional[str] = Field(None, description="关系开始时间（故事时间）")
@@ -45,7 +44,7 @@ class CharacterRelationshipUpdate(BaseModel):
     """更新角色关系的请求模型"""
     relationship_type_id: Optional[int] = None
     relationship_name: Optional[str] = None
-    intimacy_level: Optional[int] = Field(None, ge=0, le=100)
+    intimacy_level: Optional[int] = Field(None, ge=-100, le=100)
     status: Optional[str] = None
     description: Optional[str] = None
     started_at: Optional[str] = None
@@ -62,8 +61,7 @@ class CharacterRelationshipResponse(CharacterRelationshipBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RelationshipGraphNode(BaseModel):
@@ -127,8 +125,7 @@ class OrganizationResponse(OrganizationBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrganizationDetailResponse(BaseModel):
@@ -185,8 +182,7 @@ class OrganizationMemberResponse(OrganizationMemberBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrganizationMemberDetailResponse(BaseModel):

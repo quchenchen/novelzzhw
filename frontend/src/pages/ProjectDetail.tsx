@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Outlet, Link, useLocation } from 'react-router-dom';
-import { Layout, Menu, Spin, Button, Statistic, Row, Col, Card, Drawer } from 'antd';
+import { Layout, Menu, Spin, Button, Drawer } from 'antd';
 import {
   ArrowLeftOutlined,
   FileTextOutlined,
@@ -14,6 +14,8 @@ import {
   BankOutlined,
   EditOutlined,
   FundOutlined,
+  HeartOutlined,
+  TrophyOutlined,
 } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useCharacterSync, useOutlineSync, useChapterSync } from '../store/hooks';
@@ -66,7 +68,7 @@ export default function ProjectDetail() {
         // 加载项目基本信息
         const project = await projectApi.getProject(id);
         setCurrentProject(project);
-        
+
         // 并行加载其他数据
         await Promise.all([
           refreshOutlines(id),
@@ -94,9 +96,19 @@ export default function ProjectDetail() {
 
   const menuItems = [
     {
+      key: 'sponsor',
+      icon: <HeartOutlined />,
+      label: <Link to={`/project/${projectId}/sponsor`}>赞助支持</Link>,
+    },
+    {
       key: 'world-setting',
       icon: <GlobalOutlined />,
       label: <Link to={`/project/${projectId}/world-setting`}>世界设定</Link>,
+    },
+    {
+      key: 'careers',
+      icon: <TrophyOutlined />,
+      label: <Link to={`/project/${projectId}/careers`}>职业管理</Link>,
     },
     {
       key: 'characters',
@@ -144,6 +156,7 @@ export default function ProjectDetail() {
   const selectedKey = useMemo(() => {
     const path = location.pathname;
     if (path.includes('/world-setting')) return 'world-setting';
+    if (path.includes('/careers')) return 'careers';
     if (path.includes('/relationships')) return 'relationships';
     if (path.includes('/organizations')) return 'organizations';
     if (path.includes('/outline')) return 'outline';
@@ -151,8 +164,9 @@ export default function ProjectDetail() {
     if (path.includes('/chapter-analysis')) return 'chapter-analysis';
     if (path.includes('/chapters')) return 'chapters';
     if (path.includes('/writing-styles')) return 'writing-styles';
+    if (path.includes('/sponsor')) return 'sponsor';
     // if (path.includes('/polish')) return 'polish';
-    return 'world-setting'; // 默认选中世界设定
+    return 'sponsor'; // 默认选中赞助支持
   }, [location.pathname]);
 
   if (loading || !currentProject) {
@@ -172,6 +186,7 @@ export default function ProjectDetail() {
     }}>
       <Menu
         mode="inline"
+        inlineCollapsed={collapsed}
         selectedKeys={[selectedKey]}
         style={{
           borderRight: 0,
@@ -186,7 +201,7 @@ export default function ProjectDetail() {
   return (
     <Layout style={{ minHeight: '100vh', height: '100vh', overflow: 'hidden' }}>
       <Header style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background: 'var(--color-primary)',
         padding: mobile ? '0 12px' : '0 24px',
         display: 'flex',
         alignItems: 'center',
@@ -196,7 +211,7 @@ export default function ProjectDetail() {
         left: 0,
         right: 0,
         zIndex: 1000,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        boxShadow: 'var(--shadow-header)',
         height: mobile ? 56 : 70
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', zIndex: 1 }}>
@@ -227,7 +242,7 @@ export default function ProjectDetail() {
             </Button>
           )}
         </div>
-        
+
         <h2 style={{
           margin: 0,
           color: '#fff',
@@ -247,7 +262,7 @@ export default function ProjectDetail() {
         }}>
           {currentProject.title}
         </h2>
-        
+
         {mobile && (
           <Button
             type="text"
@@ -264,95 +279,63 @@ export default function ProjectDetail() {
             主页
           </Button>
         )}
-        
+
         {!mobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', zIndex: 1 }}>
-            <Row gutter={12} style={{ width: '450px', justifyContent: 'flex-end' }}>
-            <Col>
-              <Card
-                size="small"
-                style={{
-                  background: 'rgba(255,255,255,0.95)',
-                  borderRadius: '6px',
-                  border: 'none',
-                  minWidth: '80px',
-                  textAlign: 'center',
-                  padding: '4px 8px'
-                }}
-                styles={{ body: { padding: '8px' } }}
-              >
-                <Statistic
-                  title={<span style={{ fontSize: '11px', color: '#666' }}>大纲</span>}
-                  value={outlines.length}
-                  suffix="条"
-                  valueStyle={{ fontSize: '16px', fontWeight: 600, color: '#667eea' }}
-                />
-              </Card>
-            </Col>
-            <Col>
-              <Card
-                size="small"
-                style={{
-                  background: 'rgba(255,255,255,0.95)',
-                  borderRadius: '6px',
-                  border: 'none',
-                  minWidth: '80px',
-                  textAlign: 'center',
-                  padding: '4px 8px'
-                }}
-                styles={{ body: { padding: '8px' } }}
-              >
-                <Statistic
-                  title={<span style={{ fontSize: '11px', color: '#666' }}>角色</span>}
-                  value={characters.length}
-                  suffix="个"
-                  valueStyle={{ fontSize: '16px', fontWeight: 600, color: '#52c41a' }}
-                />
-              </Card>
-            </Col>
-            <Col>
-              <Card
-                size="small"
-                style={{
-                  background: 'rgba(255,255,255,0.95)',
-                  borderRadius: '6px',
-                  border: 'none',
-                  minWidth: '80px',
-                  textAlign: 'center',
-                  padding: '4px 8px'
-                }}
-                styles={{ body: { padding: '8px' } }}
-              >
-                <Statistic
-                  title={<span style={{ fontSize: '11px', color: '#666' }}>章节</span>}
-                  value={chapters.length}
-                  suffix="章"
-                  valueStyle={{ fontSize: '16px', fontWeight: 600, color: '#1890ff' }}
-                />
-              </Card>
-            </Col>
-            <Col>
-              <Card
-                size="small"
-                style={{
-                  background: 'rgba(255,255,255,0.95)',
-                  borderRadius: '6px',
-                  border: 'none',
-                  minWidth: '80px',
-                  textAlign: 'center',
-                  padding: '4px 8px'
-                }}
-                styles={{ body: { padding: '8px' } }}
-              >
-                <Statistic
-                  title={<span style={{ fontSize: '11px', color: '#666' }}>已写</span>}
-                  value={currentProject.current_words}
-                  suffix="字"
-                  valueStyle={{ fontSize: '16px', fontWeight: 600, color: '#fa8c16' }}
-                />
-              </Card>
-            </Col>
-            </Row>
+            <div style={{ display: 'flex', gap: '16px' }}>
+              {[
+                { label: '大纲', value: outlines.length, unit: '条' },
+                { label: '角色', value: characters.length, unit: '个' },
+                { label: '章节', value: chapters.length, unit: '章' },
+                { label: '已写', value: currentProject.current_words, unit: '字' },
+              ].map((item, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backdropFilter: 'blur(4px)',
+                    borderRadius: '28px',
+                    minWidth: '56px',
+                    height: '56px',
+                    padding: '0 12px',
+                    boxShadow: 'inset 0 0 15px rgba(255, 255, 255, 0.15), 0 4px 10px rgba(0, 0, 0, 0.1)',
+                    cursor: 'default',
+                    transition: 'all 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
+                    e.currentTarget.style.boxShadow = 'inset 0 0 20px rgba(255, 255, 255, 0.25), 0 8px 16px rgba(0, 0, 0, 0.15)';
+                    e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                    e.currentTarget.style.boxShadow = 'inset 0 0 15px rgba(255, 255, 255, 0.15), 0 4px 10px rgba(0, 0, 0, 0.1)';
+                  }}
+                >
+                  <span style={{
+                    fontSize: '11px',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    marginBottom: '2px',
+                    lineHeight: 1
+                  }}>
+                    {item.label}
+                  </span>
+                  <span style={{
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    color: '#fff',
+                    lineHeight: 1,
+                    fontFamily: 'Monaco, monospace'
+                  }}>
+                    {item.value > 10000 ? (item.value / 10000).toFixed(1) + 'w' : item.value}
+                    <span style={{ fontSize: '10px', marginLeft: '2px', opacity: 0.8 }}>{item.unit}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </Header>
@@ -371,23 +354,22 @@ export default function ProjectDetail() {
           </Drawer>
         ) : (
           <Sider
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          trigger={null}
-          width={220}
-          collapsedWidth={60}
-          style={{
-            background: '#fff',
-            position: 'fixed',
-            left: 0,
-            top: 70,
-            bottom: 0,
-            overflow: 'hidden',
-            boxShadow: '2px 0 12px rgba(0,0,0,0.08)',
-            transition: 'all 0.2s',
-            height: 'calc(100vh - 70px)'
-          }}
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            trigger={null}
+            width={220}
+            collapsedWidth={60}
+            className="modern-sider"
+            style={{
+              position: 'fixed',
+              left: 0,
+              top: 70,
+              bottom: 0,
+              overflow: 'hidden',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              height: 'calc(100vh - 70px)'
+            }}
           >
             <div style={{
               height: '100%',
@@ -405,7 +387,7 @@ export default function ProjectDetail() {
         }}>
           <Content
             style={{
-              background: '#f5f7fa',
+              background: 'var(--color-bg-base)',
               padding: mobile ? 12 : 24,
               height: mobile ? 'calc(100vh - 56px)' : 'calc(100vh - 70px)',
               overflow: 'hidden',
@@ -414,10 +396,10 @@ export default function ProjectDetail() {
             }}
           >
             <div style={{
-              background: '#fff',
+              background: 'var(--color-bg-container)',
               padding: mobile ? 12 : 24,
               borderRadius: mobile ? '8px' : '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              boxShadow: 'var(--shadow-card)',
               height: '100%',
               overflow: 'hidden',
               display: 'flex',

@@ -1,38 +1,72 @@
-import { useState, useEffect } from 'react';
-import { Button, Modal, Form, Input, Select, message, Row, Col, Empty, Tabs, Divider, Typography, Space } from 'antd';
-import { ThunderboltOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
+import { useState, useEffect, useRef } from 'react';
+import { Button, Modal, Form, Input, Select, message, Row, Col, Empty, Tabs, Divider, Typography, Space, InputNumber, Checkbox } from 'antd';
+import { ThunderboltOutlined, UserOutlined, TeamOutlined, PlusOutlined, ExportOutlined, ImportOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useCharacterSync } from '../store/hooks';
 import { characterGridConfig } from '../components/CardStyles';
 import { CharacterCard } from '../components/CharacterCard';
-import type { Character, CharacterUpdate } from '../types';
+import { SSELoadingOverlay } from '../components/SSELoadingOverlay';
+import type { Character } from '../types';
 import { characterApi } from '../services/api';
+import { SSEPostClient } from '../utils/sseClient';
+import api from '../services/api';
 
 const { Title } = Typography;
-
 const { TextArea } = Input;
+
+interface Career {
+  id: string;
+  name: string;
+  type: 'main' | 'sub';
+  max_stage: number;
+}
 
 export default function Characters() {
   const { currentProject, characters } = useStore();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'character' | 'organization'>('all');
   const [generateForm] = Form.useForm();
+  const [generateOrgForm] = Form.useForm();
+  const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createType, setCreateType] = useState<'character' | 'organization'>('character');
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
+  const [mainCareers, setMainCareers] = useState<Career[]>([]);
+  const [subCareers, setSubCareers] = useState<Career[]>([]);
+  const [selectedCharacters, setSelectedCharacters] = useState<string[]>([]);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     refreshCharacters,
-    deleteCharacter,
-    generateCharacter
+    deleteCharacter
   } = useCharacterSync();
 
   useEffect(() => {
     if (currentProject?.id) {
       refreshCharacters();
+      fetchCareers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
+  const [modal, contextHolder] = Modal.useModal();
+
+  const fetchCareers = async () => {
+    if (!currentProject?.id) return;
+    try {
+      const response = await api.get<unknown, { main_careers: Career[]; sub_careers: Career[] }>('/careers', {
+        params: { project_id: currentProject.id }
+      });
+      setMainCareers(response.main_careers || []);
+      setSubCareers(response.sub_careers || []);
+    } catch (error) {
+      console.error('获取职业列表失败:', error);
+    }
+  };
 
   if (!currentProject) return null;
 
@@ -48,38 +82,195 @@ export default function Characters() {
   const handleGenerate = async (values: { name?: string; role_type: string; background?: string }) => {
     try {
       setIsGenerating(true);
-      await generateCharacter({
-        project_id: currentProject.id,
-        name: values.name,
-        role_type: values.role_type,
-        background: values.background,
-      });
+      setProgress(0);
+      setProgressMessage('准备生成角色...');
+
+      const client = new SSEPostClient(
+        '/api/characters/generate-stream',
+        {
+          project_id: currentProject.id,
+          name: values.name,
+          role_type: values.role_type,
+          background: values.background,
+        },
+        {
+          onProgress: (msg, prog) => {
+            setProgress(prog);
+            setProgressMessage(msg);
+          },
+          onResult: (data) => {
+            console.log('角色生成完成:', data);
+          },
+          onError: (error) => {
+            message.error(`生成失败: ${error}`);
+          },
+          onComplete: () => {
+            setProgress(100);
+            setProgressMessage('生成完成！');
+          }
+        }
+      );
+
+      await client.connect();
       message.success('AI生成角色成功');
       Modal.destroyAll();
-    } catch {
-      message.error('AI生成失败');
+      await refreshCharacters();
+    } catch (error: any) {
+      message.error(error.message || 'AI生成失败');
     } finally {
-      setIsGenerating(false);
+      setTimeout(() => {
+        setIsGenerating(false);
+        setProgress(0);
+        setProgressMessage('');
+      }, 500);
+    }
+  };
+
+  const handleGenerateOrganization = async (values: {
+    name?: string;
+    organization_type?: string;
+    background?: string;
+    requirements?: string;
+  }) => {
+    try {
+      setIsGenerating(true);
+      setProgress(0);
+      setProgressMessage('准备生成组织...');
+
+      const client = new SSEPostClient(
+        '/api/organizations/generate-stream',
+        {
+          project_id: currentProject.id,
+          name: values.name,
+          organization_type: values.organization_type,
+          background: values.background,
+          requirements: values.requirements,
+        },
+        {
+          onProgress: (msg, prog) => {
+            setProgress(prog);
+            setProgressMessage(msg);
+          },
+          onResult: (data) => {
+            console.log('组织生成完成:', data);
+          },
+          onError: (error) => {
+            message.error(`生成失败: ${error}`);
+          },
+          onComplete: () => {
+            setProgress(100);
+            setProgressMessage('生成完成！');
+          }
+        }
+      );
+
+      await client.connect();
+      message.success('AI生成组织成功');
+      Modal.destroyAll();
+      await refreshCharacters();
+    } catch (error: any) {
+      message.error(error.message || 'AI生成失败');
+    } finally {
+      setTimeout(() => {
+        setIsGenerating(false);
+        setProgress(0);
+        setProgressMessage('');
+      }, 500);
+    }
+  };
+
+  const handleCreateCharacter = async (values: any) => {
+    try {
+      const createData: any = {
+        project_id: currentProject.id,
+        name: values.name,
+        is_organization: createType === 'organization',
+      };
+
+      if (createType === 'character') {
+        // 角色字段
+        createData.age = values.age;
+        createData.gender = values.gender;
+        createData.role_type = values.role_type || 'supporting';
+        createData.personality = values.personality;
+        createData.appearance = values.appearance;
+        createData.relationships = values.relationships;
+        createData.background = values.background;
+        
+        // 职业字段
+        if (values.main_career_id) {
+          createData.main_career_id = values.main_career_id;
+          createData.main_career_stage = values.main_career_stage || 1;
+        }
+        
+        // 处理副职业数据
+        if (values.sub_career_data && Array.isArray(values.sub_career_data) && values.sub_career_data.length > 0) {
+          createData.sub_careers = JSON.stringify(values.sub_career_data);
+        }
+      } else {
+        // 组织字段
+        createData.organization_type = values.organization_type;
+        createData.organization_purpose = values.organization_purpose;
+        createData.organization_members = values.organization_members;
+        createData.background = values.background;
+        createData.power_level = values.power_level;
+        createData.location = values.location;
+        createData.motto = values.motto;
+        createData.color = values.color;
+        createData.role_type = 'supporting'; // 组织默认为配角
+      }
+
+      await characterApi.createCharacter(createData);
+      message.success(`${createType === 'character' ? '角色' : '组织'}创建成功`);
+      setIsCreateModalOpen(false);
+      createForm.resetFields();
+      await refreshCharacters();
+    } catch {
+      message.error('创建失败');
     }
   };
 
   const handleEditCharacter = (character: Character) => {
     setEditingCharacter(character);
-    editForm.setFieldsValue(character);
+
+    // 提取副职业数据（包含职业ID和阶段）
+    const subCareerData = character.sub_careers?.map((sc: any) => ({
+      career_id: sc.career_id,
+      stage: sc.stage || 1
+    })) || [];
+
+    editForm.setFieldsValue({
+      ...character,
+      sub_career_data: subCareerData
+    });
     setIsEditModalOpen(true);
   };
 
-  const handleUpdateCharacter = async (values: CharacterUpdate) => {
+  const handleUpdateCharacter = async (values: any) => {
     if (!editingCharacter) return;
-    
+
     try {
-      await characterApi.updateCharacter(editingCharacter.id, values);
+      const updateData: any = { ...values };
+
+      // 处理副职业数据
+      const subCareerData = updateData.sub_career_data;
+      delete updateData.sub_career_data;
+
+      // 转换为sub_careers格式
+      if (subCareerData && Array.isArray(subCareerData) && subCareerData.length > 0) {
+        updateData.sub_careers = JSON.stringify(subCareerData);
+      } else {
+        updateData.sub_careers = JSON.stringify([]);
+      }
+
+      await characterApi.updateCharacter(editingCharacter.id, updateData);
       message.success('更新成功');
       setIsEditModalOpen(false);
       editForm.resetFields();
       setEditingCharacter(null);
       await refreshCharacters();
-    } catch {
+    } catch (error) {
+      console.error('更新失败:', error);
       message.error('更新失败');
     }
   };
@@ -88,8 +279,190 @@ export default function Characters() {
     handleDeleteCharacter(id);
   };
 
+  // 导出选中的角色/组织
+  const handleExportSelected = async () => {
+    if (selectedCharacters.length === 0) {
+      message.warning('请至少选择一个角色或组织');
+      return;
+    }
+
+    try {
+      await characterApi.exportCharacters(selectedCharacters);
+      message.success(`成功导出 ${selectedCharacters.length} 个角色/组织`);
+      setSelectedCharacters([]);
+    } catch (error) {
+      message.error('导出失败');
+      console.error('导出错误:', error);
+    }
+  };
+
+  // 导出单个角色/组织
+  const handleExportSingle = async (characterId: string) => {
+    try {
+      await characterApi.exportCharacters([characterId]);
+      message.success('导出成功');
+    } catch (error) {
+      message.error('导出失败');
+      console.error('导出错误:', error);
+    }
+  };
+
+  // 处理文件选择
+  const handleFileSelect = async (file: File) => {
+    try {
+      // 验证文件
+      const validation = await characterApi.validateImportCharacters(file);
+      
+      if (!validation.valid) {
+        modal.error({
+          title: '文件验证失败',
+          centered: true,
+          content: (
+            <div>
+              {validation.errors.map((error, index) => (
+                <div key={index} style={{ color: 'red' }}>• {error}</div>
+              ))}
+            </div>
+          ),
+        });
+        return;
+      }
+
+      // 显示预览对话框
+      modal.confirm({
+        title: '导入预览',
+        width: 500,
+        centered: true,
+        content: (
+          <div>
+            <p><strong>文件版本:</strong> {validation.version}</p>
+            <Divider style={{ margin: '12px 0' }} />
+            <p><strong>将要导入:</strong></p>
+            <ul style={{ marginLeft: 20 }}>
+              <li>角色: {validation.statistics.characters} 个</li>
+              <li>组织: {validation.statistics.organizations} 个</li>
+            </ul>
+            {validation.warnings.length > 0 && (
+              <>
+                <Divider style={{ margin: '12px 0' }} />
+                <p style={{ color: '#faad14' }}><strong>⚠️ 警告:</strong></p>
+                <ul style={{ marginLeft: 20 }}>
+                  {validation.warnings.map((warning, index) => (
+                    <li key={index} style={{ color: '#faad14' }}>{warning}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        ),
+        okText: '确认导入',
+        cancelText: '取消',
+        onOk: async () => {
+          try {
+            const result = await characterApi.importCharacters(currentProject.id, file);
+            
+            if (result.success) {
+              // 显示导入结果
+              modal.success({
+                title: '导入完成',
+                width: 600,
+                centered: true,
+                content: (
+                  <div>
+                    <p><strong>✅ 成功导入: {result.statistics.imported} 个</strong></p>
+                    {result.details.imported_characters.length > 0 && (
+                      <>
+                        <p style={{ marginTop: 12, marginBottom: 4 }}>角色:</p>
+                        <ul style={{ marginLeft: 20 }}>
+                          {result.details.imported_characters.map((name, index) => (
+                            <li key={index}>{name}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {result.details.imported_organizations.length > 0 && (
+                      <>
+                        <p style={{ marginTop: 12, marginBottom: 4 }}>组织:</p>
+                        <ul style={{ marginLeft: 20 }}>
+                          {result.details.imported_organizations.map((name, index) => (
+                            <li key={index}>{name}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {result.statistics.skipped > 0 && (
+                      <>
+                        <Divider style={{ margin: '12px 0' }} />
+                        <p style={{ color: '#faad14' }}>⚠️ 跳过: {result.statistics.skipped} 个</p>
+                        <ul style={{ marginLeft: 20 }}>
+                          {result.details.skipped.map((name, index) => (
+                            <li key={index} style={{ color: '#faad14' }}>{name}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {result.warnings.length > 0 && (
+                      <>
+                        <Divider style={{ margin: '12px 0' }} />
+                        <p style={{ color: '#faad14' }}>⚠️ 警告:</p>
+                        <ul style={{ marginLeft: 20 }}>
+                          {result.warnings.map((warning, index) => (
+                            <li key={index} style={{ color: '#faad14' }}>{warning}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {result.details.errors.length > 0 && (
+                      <>
+                        <Divider style={{ margin: '12px 0' }} />
+                        <p style={{ color: 'red' }}>❌ 失败: {result.statistics.errors} 个</p>
+                        <ul style={{ marginLeft: 20 }}>
+                          {result.details.errors.map((error, index) => (
+                            <li key={index} style={{ color: 'red' }}>{error}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                ),
+              });
+              
+              // 刷新列表
+              await refreshCharacters();
+              setIsImportModalOpen(false);
+            } else {
+              message.error(result.message || '导入失败');
+            }
+          } catch (error: any) {
+            message.error(error.response?.data?.detail || '导入失败');
+            console.error('导入错误:', error);
+          }
+        },
+      });
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '文件验证失败');
+      console.error('验证错误:', error);
+    }
+  };
+
+  // 切换选择
+  const toggleSelectCharacter = (id: string) => {
+    setSelectedCharacters(prev =>
+      prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]
+    );
+  };
+
+  // 全选/取消全选
+  const toggleSelectAll = () => {
+    if (selectedCharacters.length === displayList.length) {
+      setSelectedCharacters([]);
+    } else {
+      setSelectedCharacters(displayList.map(c => c.id));
+    }
+  };
+
   const showGenerateModal = () => {
-    Modal.confirm({
+    modal.confirm({
       title: 'AI生成角色',
       width: 600,
       centered: true,
@@ -126,6 +499,42 @@ export default function Characters() {
     });
   };
 
+  const showGenerateOrgModal = () => {
+    modal.confirm({
+      title: 'AI生成组织',
+      width: 600,
+      centered: true,
+      content: (
+        <Form form={generateOrgForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            label="组织名称"
+            name="name"
+          >
+            <Input placeholder="如：天剑门、黑龙会（可选，AI会自动生成）" />
+          </Form.Item>
+          <Form.Item
+            label="组织类型"
+            name="organization_type"
+          >
+            <Input placeholder="如：门派、帮派、公司、学院（可选，AI会根据世界观生成）" />
+          </Form.Item>
+          <Form.Item label="背景设定" name="background">
+            <TextArea rows={3} placeholder="简要描述组织的背景和环境..." />
+          </Form.Item>
+          <Form.Item label="其他要求" name="requirements">
+            <TextArea rows={2} placeholder="其他特殊要求..." />
+          </Form.Item>
+        </Form>
+      ),
+      okText: '生成',
+      cancelText: '取消',
+      onOk: async () => {
+        const values = await generateOrgForm.validateFields();
+        await handleGenerateOrganization(values);
+      },
+    });
+  };
+
   const characterList = characters.filter(c => !c.is_organization);
   const organizationList = characters.filter(c => c.is_organization);
 
@@ -141,30 +550,83 @@ export default function Characters() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {contextHolder}
       <div style={{
         position: 'sticky',
         top: 0,
         zIndex: 10,
-        backgroundColor: '#fff',
+        backgroundColor: 'var(--color-bg-container)',
         padding: isMobile ? '12px 0' : '16px 0',
         marginBottom: isMobile ? 12 : 16,
-        borderBottom: '1px solid #f0f0f0',
+        borderBottom: '1px solid var(--color-border-secondary)',
         display: 'flex',
         flexDirection: isMobile ? 'column' : 'row',
         gap: isMobile ? 12 : 0,
         justifyContent: 'space-between',
         alignItems: isMobile ? 'stretch' : 'center'
       }}>
-        <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 24 }}>角色与组织管理</h2>
-        <Button
-          type="dashed"
-          icon={<ThunderboltOutlined />}
-          onClick={showGenerateModal}
-          loading={isGenerating}
-          block={isMobile}
-        >
-          AI生成角色
-        </Button>
+        <h2 style={{ margin: 0, fontSize: isMobile ? 18 : 24 }}>
+          <TeamOutlined style={{ marginRight: 8 }} />
+          角色与组织管理
+        </h2>
+        <Space wrap>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setCreateType('character');
+              setIsCreateModalOpen(true);
+            }}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            创建角色
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setCreateType('organization');
+              setIsCreateModalOpen(true);
+            }}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            创建组织
+          </Button>
+          <Button
+            type="dashed"
+            icon={<ThunderboltOutlined />}
+            onClick={showGenerateModal}
+            loading={isGenerating}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            AI生成角色
+          </Button>
+          <Button
+            type="dashed"
+            icon={<ThunderboltOutlined />}
+            onClick={showGenerateOrgModal}
+            loading={isGenerating}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            AI生成组织
+          </Button>
+          <Button
+            icon={<ImportOutlined />}
+            onClick={() => setIsImportModalOpen(true)}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            导入
+          </Button>
+          {selectedCharacters.length > 0 && (
+            <Button
+              icon={<ExportOutlined />}
+              onClick={handleExportSelected}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              批量导出 ({selectedCharacters.length})
+            </Button>
+          )}
+        </Space>
       </div>
 
       {characters.length > 0 && (
@@ -172,45 +634,78 @@ export default function Characters() {
           position: 'sticky',
           top: isMobile ? 60 : 72,
           zIndex: 9,
-          backgroundColor: '#fff',
+          backgroundColor: 'var(--color-bg-container)',
           paddingBottom: 8,
-          borderBottom: '1px solid #f0f0f0',
+          borderBottom: '1px solid var(--color-border-secondary)',
         }}>
           <Tabs
             activeKey={activeTab}
             onChange={(key) => setActiveTab(key as 'all' | 'character' | 'organization')}
             items={[
-                {
-                  key: 'all',
-                  label: `全部 (${characters.length})`,
-                },
-                {
-                  key: 'character',
-                  label: (
-                    <span>
-                      <UserOutlined /> 角色 ({characterList.length})
-                    </span>
-                  ),
-                },
-                {
-                  key: 'organization',
-                  label: (
-                    <span>
-                      <TeamOutlined /> 组织 ({organizationList.length})
-                    </span>
-                  ),
-                },
-              ]}
-            />
-          </div>
-        )}
-  
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {characters.length === 0 ? (
-            <Empty description="还没有角色或组织，开始创建吧！" />
-          ) : (
-            <>
-              <Row gutter={isMobile ? [8, 8] : characterGridConfig.gutter}>
+              {
+                key: 'all',
+                label: `全部 (${characters.length})`,
+              },
+              {
+                key: 'character',
+                label: (
+                  <span>
+                    <UserOutlined /> 角色 ({characterList.length})
+                  </span>
+                ),
+              },
+              {
+                key: 'organization',
+                label: (
+                  <span>
+                    <TeamOutlined /> 组织 ({organizationList.length})
+                  </span>
+                ),
+              },
+            ]}
+          />
+        </div>
+      )}
+
+      {/* 批量选择工具栏 */}
+      {characters.length > 0 && (
+        <div style={{
+          position: 'sticky',
+          top: isMobile ? 120 : 132,
+          zIndex: 8,
+          backgroundColor: 'var(--color-bg-container)',
+          paddingBottom: 8,
+          paddingTop: 8,
+          marginTop: 8,
+          borderBottom: selectedCharacters.length > 0 ? '1px solid var(--color-border-secondary)' : 'none',
+        }}>
+          <Space>
+            <Checkbox
+              checked={selectedCharacters.length === displayList.length && displayList.length > 0}
+              indeterminate={selectedCharacters.length > 0 && selectedCharacters.length < displayList.length}
+              onChange={toggleSelectAll}
+            >
+              {selectedCharacters.length > 0 ? `已选 ${selectedCharacters.length} 个` : '全选'}
+            </Checkbox>
+            {selectedCharacters.length > 0 && (
+              <Button
+                type="link"
+                size="small"
+                onClick={() => setSelectedCharacters([])}
+              >
+                取消选择
+              </Button>
+            )}
+          </Space>
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {characters.length === 0 ? (
+          <Empty description="还没有角色或组织，开始创建吧！" />
+        ) : (
+          <>
+            <Row gutter={isMobile ? [8, 8] : characterGridConfig.gutter}>
               {activeTab === 'all' && (
                 <>
                   {characterList.length > 0 && (
@@ -233,16 +728,24 @@ export default function Characters() {
                           key={character.id}
                           style={{ padding: isMobile ? '4px' : '8px' }}
                         >
-                          <CharacterCard
-                            character={character}
-                            onEdit={handleEditCharacter}
-                            onDelete={handleDeleteCharacterWrapper}
-                          />
+                          <div style={{ position: 'relative' }}>
+                            <Checkbox
+                              checked={selectedCharacters.includes(character.id)}
+                              onChange={() => toggleSelectCharacter(character.id)}
+                              style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                            />
+                            <CharacterCard
+                              character={character}
+                              onEdit={handleEditCharacter}
+                              onDelete={handleDeleteCharacterWrapper}
+                              onExport={() => handleExportSingle(character.id)}
+                            />
+                          </div>
                         </Col>
                       ))}
                     </>
                   )}
-                  
+
                   {organizationList.length > 0 && (
                     <>
                       <Col span={24}>
@@ -263,18 +766,26 @@ export default function Characters() {
                           key={org.id}
                           style={{ padding: isMobile ? '4px' : '8px' }}
                         >
-                          <CharacterCard
-                            character={org}
-                            onEdit={handleEditCharacter}
-                            onDelete={handleDeleteCharacterWrapper}
-                          />
+                          <div style={{ position: 'relative' }}>
+                            <Checkbox
+                              checked={selectedCharacters.includes(org.id)}
+                              onChange={() => toggleSelectCharacter(org.id)}
+                              style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                            />
+                            <CharacterCard
+                              character={org}
+                              onEdit={handleEditCharacter}
+                              onDelete={handleDeleteCharacterWrapper}
+                              onExport={() => handleExportSingle(org.id)}
+                            />
+                          </div>
                         </Col>
                       ))}
                     </>
                   )}
                 </>
               )}
-              
+
               {activeTab === 'character' && characterList.map((character) => (
                 <Col
                   xs={24}
@@ -285,14 +796,22 @@ export default function Characters() {
                   key={character.id}
                   style={{ padding: isMobile ? '4px' : '8px' }}
                 >
-                  <CharacterCard
-                    character={character}
-                    onEdit={handleEditCharacter}
-                    onDelete={handleDeleteCharacterWrapper}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <Checkbox
+                      checked={selectedCharacters.includes(character.id)}
+                      onChange={() => toggleSelectCharacter(character.id)}
+                      style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                    />
+                    <CharacterCard
+                      character={character}
+                      onEdit={handleEditCharacter}
+                      onDelete={handleDeleteCharacterWrapper}
+                      onExport={() => handleExportSingle(character.id)}
+                    />
+                  </div>
                 </Col>
               ))}
-              
+
               {activeTab === 'organization' && organizationList.map((org) => (
                 <Col
                   xs={24}
@@ -303,24 +822,32 @@ export default function Characters() {
                   key={org.id}
                   style={{ padding: isMobile ? '4px' : '8px' }}
                 >
-                  <CharacterCard
-                    character={org}
-                    onEdit={handleEditCharacter}
-                    onDelete={handleDeleteCharacterWrapper}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <Checkbox
+                      checked={selectedCharacters.includes(org.id)}
+                      onChange={() => toggleSelectCharacter(org.id)}
+                      style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                    />
+                    <CharacterCard
+                      character={org}
+                      onEdit={handleEditCharacter}
+                      onDelete={handleDeleteCharacterWrapper}
+                      onExport={() => handleExportSingle(org.id)}
+                    />
+                  </div>
                 </Col>
               ))}
             </Row>
 
             {displayList.length === 0 && (
-              <Empty 
+              <Empty
                 description={
-                  activeTab === 'character' 
-                    ? '暂无角色' 
-                    : activeTab === 'organization' 
-                    ? '暂无组织' 
-                    : '暂无数据'
-                } 
+                  activeTab === 'character'
+                    ? '暂无角色'
+                    : activeTab === 'organization'
+                      ? '暂无组织'
+                      : '暂无数据'
+                }
               />
             )}
           </>
@@ -352,7 +879,7 @@ export default function Characters() {
                 <Input placeholder={`输入${editingCharacter?.is_organization ? '组织' : '角色'}名称`} />
               </Form.Item>
             </Col>
-            
+
             {!editingCharacter?.is_organization && (
               <Col span={12}>
                 <Form.Item label="角色定位" name="role_type">
@@ -412,12 +939,16 @@ export default function Characters() {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="主要成员" name="organization_members">
-                    <Input placeholder="如：张三、李四、王五" />
+                  <Form.Item
+                    label="势力等级"
+                    name="power_level"
+                    tooltip="0-100的数值，表示组织的影响力"
+                  >
+                    <InputNumber min={0} max={100} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>
-              
+
               <Form.Item
                 label="组织目的"
                 name="organization_purpose"
@@ -425,12 +956,136 @@ export default function Characters() {
               >
                 <TextArea rows={2} placeholder="描述组织的宗旨和目标..." />
               </Form.Item>
+
+              <Form.Item label="主要成员" name="organization_members">
+                <Input placeholder="如：张三、李四、王五" />
+              </Form.Item>
+
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item label="所在地" name="location">
+                    <Input placeholder="组织的主要活动区域或总部位置" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="代表颜色" name="color">
+                    <Input placeholder="如：深红色、金色、黑色等" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item label="格言/口号" name="motto">
+                <Input placeholder="组织的宗旨、格言或口号" />
+              </Form.Item>
             </>
           )}
 
           <Form.Item label={editingCharacter?.is_organization ? '组织背景' : '角色背景'} name="background">
             <TextArea rows={3} placeholder={`描述${editingCharacter?.is_organization ? '组织' : '角色'}的背景故事...`} />
           </Form.Item>
+
+          {!editingCharacter?.is_organization && (mainCareers.length > 0 || subCareers.length > 0) && (
+            <>
+              <Divider>职业信息</Divider>
+              {mainCareers.length > 0 && (
+                <Row gutter={16}>
+                  <Col span={16}>
+                    <Form.Item label="主职业" name="main_career_id" tooltip="角色的主要修炼职业">
+                      <Select placeholder="选择主职业" allowClear>
+                        {mainCareers.map(career => (
+                          <Select.Option key={career.id} value={career.id}>
+                            {career.name}（最高{career.max_stage}阶）
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item label="当前阶段" name="main_career_stage" tooltip="主职业当前修炼到的阶段">
+                      <InputNumber
+                        min={1}
+                        max={editForm.getFieldValue('main_career_id') ?
+                          mainCareers.find(c => c.id === editForm.getFieldValue('main_career_id'))?.max_stage || 10
+                          : 10}
+                        style={{ width: '100%' }}
+                        placeholder="阶段"
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
+              {subCareers.length > 0 && (
+                <Form.List name="sub_career_data">
+                  {(fields, { add, remove }) => (
+                    <>
+                      <div style={{ marginBottom: 8 }}>
+                        <Typography.Text strong>副职业</Typography.Text>
+                      </div>
+                      <div style={{ maxHeight: '100px', overflowY: 'auto', overflowX: 'hidden', marginBottom: 8, paddingRight: 8 }}>
+                        {fields.map((field) => (
+                          <Row key={field.key} gutter={8} style={{ marginBottom: 8 }}>
+                            <Col span={16}>
+                              <Form.Item
+                                {...field}
+                                name={[field.name, 'career_id']}
+                                rules={[{ required: true, message: '请选择副职业' }]}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <Select placeholder="选择副职业">
+                                  {subCareers.map(career => (
+                                    <Select.Option key={career.id} value={career.id}>
+                                      {career.name}（最高{career.max_stage}阶）
+                                    </Select.Option>
+                                  ))}
+                                </Select>
+                              </Form.Item>
+                            </Col>
+                            <Col span={6}>
+                              <Form.Item
+                                {...field}
+                                name={[field.name, 'stage']}
+                                rules={[{ required: true, message: '请输入阶段' }]}
+                                style={{ marginBottom: 0 }}
+                              >
+                                <InputNumber
+                                  min={1}
+                                  max={(() => {
+                                    const careerId = editForm.getFieldValue(['sub_career_data', field.name, 'career_id']);
+                                    const career = subCareers.find(c => c.id === careerId);
+                                    return career?.max_stage || 10;
+                                  })()}
+                                  placeholder="阶段"
+                                  style={{ width: '100%' }}
+                                />
+                              </Form.Item>
+                            </Col>
+                            <Col span={2}>
+                              <Button
+                                type="text"
+                                danger
+                                onClick={() => remove(field.name)}
+                                style={{ width: '100%' }}
+                              >
+                                删除
+                              </Button>
+                            </Col>
+                          </Row>
+                        ))}
+                      </div>
+                      <Button
+                        type="dashed"
+                        onClick={() => add({ career_id: undefined, stage: 1 })}
+                        block
+                        style={{ marginTop: 8 }}
+                      >
+                        + 添加副职业
+                      </Button>
+                    </>
+                  )}
+                </Form.List>
+              )}
+            </>
+          )}
 
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
@@ -448,6 +1103,313 @@ export default function Characters() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 手动创建角色/组织模态框 */}
+      <Modal
+        title={createType === 'character' ? '创建角色' : '创建组织'}
+        open={isCreateModalOpen}
+        onCancel={() => {
+          setIsCreateModalOpen(false);
+          createForm.resetFields();
+        }}
+        footer={null}
+        centered={!isMobile}
+        width={isMobile ? '100%' : 600}
+        style={isMobile ? { top: 0, paddingBottom: 0, maxWidth: '100vw' } : undefined}
+        styles={isMobile ? { body: { maxHeight: 'calc(100vh - 110px)', overflowY: 'auto' } } : undefined}
+      >
+        <Form form={createForm} layout="vertical" onFinish={handleCreateCharacter}>
+          <Row gutter={16}>
+            <Col span={createType === 'organization' ? 24 : 12}>
+              <Form.Item
+                label={createType === 'character' ? '角色名称' : '组织名称'}
+                name="name"
+                rules={[{ required: true, message: `请输入${createType === 'character' ? '角色' : '组织'}名称` }]}
+              >
+                <Input placeholder={`输入${createType === 'character' ? '角色' : '组织'}名称`} />
+              </Form.Item>
+            </Col>
+
+            {createType === 'character' && (
+              <Col span={12}>
+                <Form.Item label="角色定位" name="role_type" initialValue="supporting">
+                  <Select>
+                    <Select.Option value="protagonist">主角</Select.Option>
+                    <Select.Option value="supporting">配角</Select.Option>
+                    <Select.Option value="antagonist">反派</Select.Option>
+                  </Select>
+                </Form.Item>
+              </Col>
+            )}
+          </Row>
+
+          {createType === 'character' ? (
+            <>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item label="年龄" name="age">
+                    <Input placeholder="如：25、30岁" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="性别" name="gender">
+                    <Select placeholder="选择性别">
+                      <Select.Option value="男">男</Select.Option>
+                      <Select.Option value="女">女</Select.Option>
+                      <Select.Option value="其他">其他</Select.Option>
+                    </Select>
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item label="性格特点" name="personality">
+                <TextArea rows={2} placeholder="描述角色的性格特点..." />
+              </Form.Item>
+
+              <Form.Item label="外貌描写" name="appearance">
+                <TextArea rows={2} placeholder="描述角色的外貌特征..." />
+              </Form.Item>
+
+              <Form.Item label="人际关系" name="relationships">
+                <TextArea rows={2} placeholder="描述角色与其他角色的关系..." />
+              </Form.Item>
+
+              <Form.Item label="角色背景" name="background">
+                <TextArea rows={3} placeholder="描述角色的背景故事..." />
+              </Form.Item>
+
+              {/* 职业信息 */}
+              {(mainCareers.length > 0 || subCareers.length > 0) && (
+                <>
+                  <Divider>职业信息（可选）</Divider>
+                  {mainCareers.length > 0 && (
+                    <Row gutter={16}>
+                      <Col span={16}>
+                        <Form.Item label="主职业" name="main_career_id" tooltip="角色的主要修炼职业">
+                          <Select placeholder="选择主职业" allowClear>
+                            {mainCareers.map(career => (
+                              <Select.Option key={career.id} value={career.id}>
+                                {career.name}（最高{career.max_stage}阶）
+                              </Select.Option>
+                            ))}
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item label="当前阶段" name="main_career_stage" tooltip="主职业当前修炼到的阶段">
+                          <InputNumber
+                            min={1}
+                            max={createForm.getFieldValue('main_career_id') ?
+                              mainCareers.find(c => c.id === createForm.getFieldValue('main_career_id'))?.max_stage || 10
+                              : 10}
+                            style={{ width: '100%' }}
+                            placeholder="阶段"
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  )}
+                  {subCareers.length > 0 && (
+                    <Form.List name="sub_career_data">
+                      {(fields, { add, remove }) => (
+                        <>
+                          <div style={{ marginBottom: 8 }}>
+                            <Typography.Text strong>副职业</Typography.Text>
+                          </div>
+                          <div style={{ maxHeight: '100px', overflowY: 'auto', overflowX: 'hidden', marginBottom: 8, paddingRight: 8 }}>
+                            {fields.map((field) => (
+                              <Row key={field.key} gutter={8} style={{ marginBottom: 8 }}>
+                                <Col span={16}>
+                                  <Form.Item
+                                    {...field}
+                                    name={[field.name, 'career_id']}
+                                    rules={[{ required: true, message: '请选择副职业' }]}
+                                    style={{ marginBottom: 0 }}
+                                  >
+                                    <Select placeholder="选择副职业">
+                                      {subCareers.map(career => (
+                                        <Select.Option key={career.id} value={career.id}>
+                                          {career.name}（最高{career.max_stage}阶）
+                                        </Select.Option>
+                                      ))}
+                                    </Select>
+                                  </Form.Item>
+                                </Col>
+                                <Col span={6}>
+                                  <Form.Item
+                                    {...field}
+                                    name={[field.name, 'stage']}
+                                    rules={[{ required: true, message: '请输入阶段' }]}
+                                    style={{ marginBottom: 0 }}
+                                  >
+                                    <InputNumber
+                                      min={1}
+                                      max={(() => {
+                                        const careerId = createForm.getFieldValue(['sub_career_data', field.name, 'career_id']);
+                                        const career = subCareers.find(c => c.id === careerId);
+                                        return career?.max_stage || 10;
+                                      })()}
+                                      placeholder="阶段"
+                                      style={{ width: '100%' }}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={2}>
+                                  <Button
+                                    type="text"
+                                    danger
+                                    onClick={() => remove(field.name)}
+                                    style={{ width: '100%' }}
+                                  >
+                                    删除
+                                  </Button>
+                                </Col>
+                              </Row>
+                            ))}
+                          </div>
+                          <Button
+                            type="dashed"
+                            onClick={() => add({ career_id: undefined, stage: 1 })}
+                            block
+                            style={{ marginTop: 8 }}
+                          >
+                            + 添加副职业
+                          </Button>
+                        </>
+                      )}
+                    </Form.List>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="组织类型"
+                    name="organization_type"
+                    rules={[{ required: true, message: '请输入组织类型' }]}
+                  >
+                    <Input placeholder="如：帮派、公司、门派、学院" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="势力等级"
+                    name="power_level"
+                    initialValue={50}
+                    tooltip="0-100的数值，表示组织的影响力"
+                  >
+                    <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item
+                label="组织目的"
+                name="organization_purpose"
+                rules={[{ required: true, message: '请输入组织目的' }]}
+              >
+                <TextArea rows={2} placeholder="描述组织的宗旨和目标..." />
+              </Form.Item>
+
+              <Form.Item label="主要成员" name="organization_members">
+                <Input placeholder="如：张三、李四、王五" />
+              </Form.Item>
+
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item label="所在地" name="location">
+                    <Input placeholder="组织的主要活动区域或总部位置" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="代表颜色" name="color">
+                    <Input placeholder="如：深红色、金色、黑色等" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item label="格言/口号" name="motto">
+                <Input placeholder="组织的宗旨、格言或口号" />
+              </Form.Item>
+
+              <Form.Item label="组织背景" name="background">
+                <TextArea rows={3} placeholder="描述组织的背景故事..." />
+              </Form.Item>
+            </>
+          )}
+
+          <Form.Item>
+            <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+              <Button onClick={() => {
+                setIsCreateModalOpen(false);
+                createForm.resetFields();
+              }}>
+                取消
+              </Button>
+              <Button type="primary" htmlType="submit">
+                创建
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 导入对话框 */}
+      <Modal
+        title="导入角色/组织"
+        open={isImportModalOpen}
+        onCancel={() => setIsImportModalOpen(false)}
+        footer={null}
+        width={500}
+        centered
+      >
+        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <DownloadOutlined style={{ fontSize: 48, color: '#1890ff', marginBottom: 16 }} />
+          <p style={{ fontSize: 16, marginBottom: 24 }}>
+            选择之前导出的角色/组织JSON文件进行导入
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleFileSelect(file);
+                e.target.value = ''; // 清空input，允许重复选择同一文件
+              }
+            }}
+          />
+          <Button
+            type="primary"
+            size="large"
+            icon={<ImportOutlined />}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            选择文件
+          </Button>
+          <Divider />
+          <div style={{ textAlign: 'left', fontSize: 12, color: '#666' }}>
+            <p style={{ marginBottom: 8 }}><strong>说明：</strong></p>
+            <ul style={{ marginLeft: 20 }}>
+              <li>支持导入.json格式的角色/组织文件</li>
+              <li>重复名称的角色/组织将被跳过</li>
+              <li>职业信息如不存在将被忽略</li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
+
+      {/* SSE进度显示 */}
+      <SSELoadingOverlay
+        loading={isGenerating}
+        progress={progress}
+        message={progressMessage}
+      />
     </div>
   );
 }
