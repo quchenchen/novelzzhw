@@ -22,8 +22,14 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 REPO_URL="https://github.com/quchenchen/novelzzhw.git"
 CLONE_DIR="/zjdata/dk_project/novel"
 IMAGE_NAME="mumuainovel"
-DB_PASSWORD="MuMu@2024"  # 默认数据库密码，请修改
-ADMIN_PASSWORD="MuMu@2024"  # 默认管理员密码，请修改
+
+# 生成随机密码
+generate_password() {
+    openssl rand -base64 16 | tr -dc 'A-Za-z0-9!@#$%^&*' | head -c 20
+}
+
+DB_PASSWORD=$(generate_password)
+ADMIN_PASSWORD=$(generate_password)
 
 # ==========================================
 # 主流程
@@ -199,11 +205,21 @@ log_info "  部署完成！"
 log_step "========================================="
 log_info "访问地址: http://$(hostname -I | awk '{print $1}'):8000"
 log_info ""
+log_warn "========================================="
+log_warn "  重要信息，请妥善保存！"
+log_warn "========================================="
+log_info "数据库密码: $DB_PASSWORD"
+log_info "管理员密码: $ADMIN_PASSWORD"
+log_info ""
+echo "DB_PASSWORD=$DB_PASSWORD" > /zjdata/dk_project/novel/.passwords
+echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> /zjdata/dk_project/novel/.passwords
+log_info "密码已保存到: ./.passwords"
+log_warn "========================================="
+log_info ""
 log_warn "请执行以下操作："
 log_warn "1. 修改 .env 中的 OPENAI_API_KEY"
-log_warn "2. 修改数据库密码和管理员密码"
-log_warn "3. 配置宝塔面板 Nginx 反向代理"
-log_warn "4. 申请 SSL 证书"
+log_warn "2. 配置宝塔面板 Nginx 反向代理"
+log_warn "3. 申请 SSL 证书"
 log_info ""
 log_info "修改配置后重启服务:"
 log_info "  docker compose restart mumuainovel"
