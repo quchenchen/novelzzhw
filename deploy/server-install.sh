@@ -110,8 +110,8 @@ SESSION_REFRESH_THRESHOLD_MINUTES=30
 # LinuxDO OAuth（可选）
 LINUXDO_CLIENT_ID=your_client_id
 LINUXDO_CLIENT_SECRET=your_client_secret
-LINUXDO_REDIRECT_URI=https://your-domain.com/api/auth/linuxdo/callback
-FRONTEND_URL=https://your-domain.com
+LINUXDO_REDIRECT_URI=http://8.130.91.8:8000/api/auth/linuxdo/callback
+FRONTEND_URL=http://8.130.91.8:8000
 
 # 日志配置
 LOG_LEVEL=INFO
