@@ -95,21 +95,21 @@ class AIService:
         self._openai_provider: Optional[OpenAIProvider] = None
         self._anthropic_provider: Optional[AnthropicProvider] = None
         self._gemini_provider: Optional[GeminiProvider] = None
-        
-        # 初始化 OpenAI
-        openai_key = api_key if api_provider == "openai" else app_settings.openai_api_key
+
+        # 初始化 OpenAI (ark 也兼容 OpenAI 格式)
+        openai_key = api_key if api_provider in ["openai", "ark"] else app_settings.openai_api_key
         if openai_key:
-            base_url = api_base_url if api_provider == "openai" else app_settings.openai_base_url
+            base_url = api_base_url if api_provider in ["openai", "ark"] else app_settings.openai_base_url
             client = OpenAIClient(openai_key, base_url or "https://api.openai.com/v1", self.config)
             self._openai_provider = OpenAIProvider(client)
-        
+
         # 初始化 Anthropic
         anthropic_key = api_key if api_provider == "anthropic" else app_settings.anthropic_api_key
         if anthropic_key:
             base_url = api_base_url if api_provider == "anthropic" else app_settings.anthropic_base_url
             client = AnthropicClient(anthropic_key, base_url, self.config)
             self._anthropic_provider = AnthropicProvider(client)
-        
+
         # 初始化 Gemini
         if api_provider == "gemini" and api_key:
             client = GeminiClient(api_key, api_base_url, self.config)
@@ -148,7 +148,7 @@ class AIService:
     def _get_provider(self, provider: Optional[str] = None) -> BaseAIProvider:
         """获取对应的 Provider"""
         p = provider or self.api_provider
-        if p == "openai" and self._openai_provider:
+        if p in ["openai", "ark"] and self._openai_provider:
             return self._openai_provider
         if p == "anthropic" and self._anthropic_provider:
             return self._anthropic_provider

@@ -256,38 +256,42 @@ async def get_available_models(
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            if provider == "openai" or provider == "azure" or provider == "custom":
+            if provider == "openai" or provider == "azure" or provider == "custom" or provider == "ark":
                 # OpenAI 兼容接口获取模型列表
                 url = f"{api_base_url.rstrip('/')}/models"
                 headers = {
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 }
-                
+
                 logger.info(f"正在从 {url} 获取模型列表")
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
-                
+
                 data = response.json()
                 models = []
-                
+
                 if "data" in data and isinstance(data["data"], list):
                     for model in data["data"]:
                         model_id = model.get("id", "")
-                        # 返回所有模型，不进行过滤
                         if model_id:
+                            # ARK endpoint 友好名称映射
+                            if provider == "ark" and model_id.startswith("ep-"):
+                                label = f"DeepSeek-V3.2 ({model_id[:20]}...)"
+                            else:
+                                label = model_id
                             models.append({
                                 "value": model_id,
-                                "label": model_id,
+                                "label": label,
                                 "description": model.get("description", "") or f"Created: {model.get('created', 'N/A')}"
                             })
-                
+
                 if not models:
                     raise HTTPException(
                         status_code=404,
                         detail="未能从 API 获取到可用的模型列表"
                     )
-                
+
                 logger.info(f"成功获取 {len(models)} 个模型")
                 return {
                     "provider": provider,

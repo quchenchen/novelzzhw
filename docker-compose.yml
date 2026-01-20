@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: mumuainovel-postgres
+    container_name: mumuainovel-postgres-zzhw
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-mumuai_novel}
       POSTGRES_USER: ${POSTGRES_USER:-mumuai}
@@ -9,7 +9,7 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_zzhw:/var/lib/postgresql/data
       - ./backend/scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -21,7 +21,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - ai-story-network
+      - ai-story-network-zzhw
     command:
       - postgres
       - -c
@@ -54,7 +54,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: mumujie/mumuainovel:latest
-    container_name: mumuainovel
+    container_name: mumuainovel-zzhw
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,6 +99,10 @@ services:
       - GEMINI_BASE_URL=${GEMINI_BASE_URL:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      # 火山引擎 ARK 配置
+      - ARK_API_KEY=${ARK_API_KEY:-}
+      - ARK_BASE_URL=${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      - ARK_ENDPOINT_ID=${ARK_ENDPOINT_ID:-}
       - DEFAULT_AI_PROVIDER=${DEFAULT_AI_PROVIDER:-openai}
       - DEFAULT_MODEL=${DEFAULT_MODEL:-gpt-4o-mini}
       - DEFAULT_TEMPERATURE=${DEFAULT_TEMPERATURE:-0.7}
@@ -119,6 +123,11 @@ services:
       # 会话配置
       - SESSION_EXPIRE_MINUTES=${SESSION_EXPIRE_MINUTES:-120}
       - SESSION_REFRESH_THRESHOLD_MINUTES=${SESSION_REFRESH_THRESHOLD_MINUTES:-30}
+
+      # 模型下载模式（首次启动设为 0 下载模型，之后设为 1）
+      - TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-0}
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}
+      - HF_DATASETS_OFFLINE=${HF_DATASETS_OFFLINE:-0}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -127,13 +136,13 @@ services:
       retries: 3
       start_period: 30s
     networks:
-      - ai-story-network
+      - ai-story-network-zzhw
 
 volumes:
-  postgres_data:
+  postgres_data_zzhw:
     driver: local
 
 networks:
-  ai-story-network:
+  ai-story-network-zzhw:
     driver: bridge
 

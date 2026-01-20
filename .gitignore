@@ -138,3 +138,7 @@ deploy/baota/DEPLOY.md
 deploy/baota/docker-compose.yml
 deploy/baota/nginx.conf
 deploy/baota/env
+scripts/dev-start.sh
+docker-compose.yml
+docker-compose.yml
+docker-compose.yml

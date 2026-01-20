@@ -232,6 +232,7 @@ export default function SettingsPage() {
     { value: 'openai', label: 'OpenAI Compatible', defaultUrl: 'https://api.openai.com/v1' },
     // { value: 'anthropic', label: 'Anthropic (Claude)', defaultUrl: 'https://api.anthropic.com' },
     { value: 'gemini', label: 'Google Gemini', defaultUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+    { value: 'ark', label: '火山引擎 (Volcengine ARK)', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
   ];
 
   const handleProviderChange = (value: string) => {
@@ -656,6 +657,8 @@ export default function SettingsPage() {
       //   return 'purple';
       case 'gemini':
         return 'green';
+      case 'ark':
+        return 'red';
       default:
         return 'default';
     }
@@ -1422,6 +1425,7 @@ export default function SettingsPage() {
                   <Select placeholder="选择提供商">
                     <Select.Option value="openai">OpenAI</Select.Option>
                     <Select.Option value="gemini">Google Gemini</Select.Option>
+                    <Select.Option value="ark">火山引擎 ARK</Select.Option>
                   </Select>
                 </Form.Item>
               </Col>
