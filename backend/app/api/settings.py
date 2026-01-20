@@ -275,16 +275,37 @@ async def get_available_models(
                     for model in data["data"]:
                         model_id = model.get("id", "")
                         if model_id:
-                            # ARK endpoint 友好名称映射
-                            if provider == "ark" and model_id.startswith("ep-"):
-                                label = f"DeepSeek-V3.2 ({model_id[:20]}...)"
+                            # ARK 模型友好名称映射
+                            if provider == "ark":
+                                # 预置模型使用 name 字段作为显示名称
+                                model_name = model.get("name", model_id)
+                                # 特殊处理 DeepSeek-V3.2
+                                if "deepseek" in model_name.lower():
+                                    label = f"DeepSeek-V3.2 (预置)"
+                                elif "doubao" in model_name.lower():
+                                    label = f"豆包 {model_name}"
+                                else:
+                                    label = f"{model_name} (预置)"
+                                models.append({
+                                    "value": model_id,
+                                    "label": label,
+                                    "description": model.get("description", "") or f"Created: {model.get('created', 'N/A')}"
+                                })
                             else:
-                                label = model_id
-                            models.append({
-                                "value": model_id,
-                                "label": label,
-                                "description": model.get("description", "") or f"Created: {model.get('created', 'N/A')}"
-                            })
+                                models.append({
+                                    "value": model_id,
+                                    "label": model_id,
+                                    "description": model.get("description", "") or f"Created: {model.get('created', 'N/A')}"
+                                })
+
+                # ARK 特殊处理：添加自定义端点选项
+                if provider == "ark":
+                    # 添加自定义推理端点输入选项
+                    models.insert(0, {
+                        "value": "__custom_endpoint__",
+                        "label": "【自定义推理端点】DeepSeek3.2",
+                        "description": "手动输入自定义推理端点 ID (如: ep-20251209114631-vzqqw)"
+                    })
 
                 if not models:
                     raise HTTPException(

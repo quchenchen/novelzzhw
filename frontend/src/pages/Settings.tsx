@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelsFetched, setModelsFetched] = useState(false);
   const [testingApi, setTestingApi] = useState(false);
+  const [isCustomEndpoint, setIsCustomEndpoint] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
@@ -971,99 +972,132 @@ export default function SettingsPage() {
                             />
                           </Form.Item>
 
-                          <Form.Item
-                            label={
-                              <Space size={4}>
-                                <span>模型名称</span>
-                                <InfoCircleOutlined
-                                  title="AI模型的名称，如 gpt-4, gpt-3.5-turbo"
-                                  style={{ color: 'var(--color-text-secondary)', fontSize: isMobile ? '12px' : '14px' }}
-                                />
-                              </Space>
-                            }
-                            name="llm_model"
-                            rules={[{ required: true, message: '请输入或选择模型名称' }]}
-                          >
-                            <Select
-                              size={isMobile ? 'middle' : 'large'}
-                              showSearch
-                              placeholder={isMobile ? "选择模型" : "输入模型名称或点击获取"}
-                              optionFilterProp="label"
-                              loading={fetchingModels}
-                              onFocus={handleModelSelectFocus}
-                              filterOption={(input, option) =>
-                                (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
-                                (option?.description ?? '').toLowerCase().includes(input.toLowerCase())
+                          {/* 模型选择 - 根据模式显示下拉或输入框 */}
+                          {isCustomEndpoint ? (
+                            <Form.Item
+                              label={
+                                <Space size={4}>
+                                  <span>DeepSeek3.2 端点 ID</span>
+                                  <InfoCircleOutlined
+                                    title="输入火山引擎 ARK 的自定义推理端点 ID"
+                                    style={{ color: 'var(--color-text-secondary)', fontSize: isMobile ? '12px' : '14px' }}
+                                  />
+                                </Space>
                               }
-                              dropdownRender={(menu) => (
-                                <>
-                                  {menu}
-                                  {fetchingModels && (
-                                    <div style={{ padding: '8px 12px', color: 'var(--color-text-secondary)', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
-                                      <Spin size="small" /> 正在获取模型列表...
-                                    </div>
-                                  )}
-                                  {!fetchingModels && modelOptions.length === 0 && modelsFetched && (
-                                    <div style={{ padding: '8px 12px', color: '#ff4d4f', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
-                                      未能获取到模型列表，请检查 API 配置
-                                    </div>
-                                  )}
-                                  {!fetchingModels && modelOptions.length === 0 && !modelsFetched && (
-                                    <div style={{ padding: '8px 12px', color: 'var(--color-text-secondary)', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
-                                      点击输入框自动获取模型列表
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                              notFoundContent={
-                                fetchingModels ? (
-                                  <div style={{ padding: '8px 12px', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
-                                    <Spin size="small" /> 加载中...
-                                  </div>
-                                ) : (
-                                  <div style={{ padding: '8px 12px', color: 'var(--color-text-secondary)', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
-                                    未找到匹配的模型
-                                  </div>
-                                )
+                              name="llm_model"
+                              rules={[{ required: true, message: '请输入 Endpoint ID' }]}
+                              extra={
+                                <Button type="link" size="small" onClick={() => setIsCustomEndpoint(false)}>
+                                  返回模型列表选择
+                                </Button>
                               }
-                              suffixIcon={
-                                !isMobile ? (
-                                  <div
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!fetchingModels) {
-                                        setModelsFetched(false);
-                                        handleFetchModels(false);
-                                      }
-                                    }}
-                                    style={{
-                                      cursor: fetchingModels ? 'not-allowed' : 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      padding: '0 4px',
-                                      height: '100%',
-                                      marginRight: -8
-                                    }}
-                                    title="重新获取模型列表"
-                                  >
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      icon={<ReloadOutlined />}
-                                      loading={fetchingModels}
-                                      style={{ pointerEvents: 'none' }}
+                            >
+                              <Input
+                                size={isMobile ? 'middle' : 'large'}
+                                placeholder="ep-20251209114631-vzqqw"
+                                prefix={<span style={{ fontSize: '12px', color: '#999' }}>EP:</span>}
+                              />
+                            </Form.Item>
+                          ) : (
+                            <Form.Item
+                              label={
+                                <Space size={4}>
+                                  <span>模型名称</span>
+                                  <InfoCircleOutlined
+                                    title="AI模型的名称，如 gpt-4, gpt-3.5-turbo"
+                                    style={{ color: 'var(--color-text-secondary)', fontSize: isMobile ? '12px' : '14px' }}
+                                  />
+                                </Space>
+                              }
+                              name="llm_model"
+                              rules={[{ required: true, message: '请输入或选择模型名称' }]}
+                            >
+                              <Select
+                                size={isMobile ? 'middle' : 'large'}
+                                showSearch
+                                placeholder={isMobile ? "选择模型" : "输入模型名称或点击获取"}
+                                optionFilterProp="label"
+                                loading={fetchingModels}
+                                onFocus={handleModelSelectFocus}
+                                onChange={(value) => {
+                                  if (value === '__custom_endpoint__') {
+                                    setIsCustomEndpoint(true);
+                                    form.setFieldValue('llm_model', '');
+                                  }
+                                }}
+                                filterOption={(input, option) =>
+                                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                                  (option?.description ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                                dropdownRender={(menu) => (
+                                  <>
+                                    {menu}
+                                    {fetchingModels && (
+                                      <div style={{ padding: '8px 12px', color: 'var(--color-text-secondary)', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
+                                        <Spin size="small" /> 正在获取模型列表...
+                                      </div>
+                                    )}
+                                    {!fetchingModels && modelOptions.length === 0 && modelsFetched && (
+                                      <div style={{ padding: '8px 12px', color: '#ff4d4f', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
+                                        未能获取到模型列表，请检查 API 配置
+                                      </div>
+                                    )}
+                                    {!fetchingModels && modelOptions.length === 0 && !modelsFetched && (
+                                      <div style={{ padding: '8px 12px', color: 'var(--color-text-secondary)', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
+                                        点击输入框自动获取模型列表
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                                notFoundContent={
+                                  fetchingModels ? (
+                                    <div style={{ padding: '8px 12px', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
+                                      <Spin size="small" /> 加载中...
+                                    </div>
+                                  ) : (
+                                    <div style={{ padding: '8px 12px', color: 'var(--color-text-secondary)', textAlign: 'center', fontSize: isMobile ? '12px' : '14px' }}>
+                                      未找到匹配的模型
+                                    </div>
+                                  )
+                                }
+                                suffixIcon={
+                                  !isMobile ? (
+                                    <div
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!fetchingModels) {
+                                          setModelsFetched(false);
+                                          handleFetchModels(false);
+                                        }
+                                      }}
+                                      style={{
+                                        cursor: fetchingModels ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '0 4px',
+                                        height: '100%',
+                                        marginRight: -8
+                                      }}
+                                      title="重新获取模型列表"
                                     >
-                                      刷新
-                                    </Button>
-                                  </div>
-                                ) : undefined
-                              }
-                              options={modelOptions.map(model => ({
-                                value: model.value,
-                                label: model.label,
-                                description: model.description
-                              }))}
-                              optionRender={(option) => (
+                                      <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<ReloadOutlined />}
+                                        loading={fetchingModels}
+                                        style={{ pointerEvents: 'none' }}
+                                      >
+                                        刷新
+                                      </Button>
+                                    </div>
+                                  ) : undefined
+                                }
+                                options={modelOptions.map(model => ({
+                                  value: model.value,
+                                  label: model.label,
+                                  description: model.description
+                                }))}
+                                optionRender={(option) => (
                                 <div>
                                   <div style={{ fontWeight: 500, fontSize: isMobile ? '13px' : '14px' }}>{option.data.label}</div>
                                   {option.data.description && (
@@ -1075,6 +1109,7 @@ export default function SettingsPage() {
                               )}
                             />
                           </Form.Item>
+                          )}
 
                           <Form.Item
                             label={
