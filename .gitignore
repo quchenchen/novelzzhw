@@ -113,32 +113,15 @@ logo.ico
 dist_embed/
 embed_build.py
 
-
 data/
 docs/
 data_old/
 backend/migrate_all_databases.py
 test_api.py
+
 # Embedding models (downloaded from HuggingFace at runtime)
 backend/embedding/
+embedding/
 
 # 产品文档（自动生成）
 PRODUCT_DOCUMENTATION.md
-
-# 部署相关敏感配置
-deploy/.env
-deploy/**/.env
-deploy/**/*.key
-deploy/**/*.pem
-deploy/aliyun/build-push.sh
-deploy/aliyun/deploy.sh
-deploy/baota/.env.example
-.gitignore
-deploy/baota/DEPLOY.md
-deploy/baota/docker-compose.yml
-deploy/baota/nginx.conf
-deploy/baota/env
-scripts/dev-start.sh
-docker-compose.yml
-docker-compose.yml
-docker-compose.yml

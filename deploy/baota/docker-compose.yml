@@ -1,0 +1,66 @@
+# ==========================================
+# 宝塔面板 Docker Compose 配置
+# 适用于宝塔面板 Docker 管理器
+# ==========================================
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:18-alpine
+    container_name: mumu-postgres
+    environment:
+      POSTGRES_DB: mumu_novel
+      POSTGRES_USER: mumu
+      POSTGRES_PASSWORD: your_secure_password_here
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: Asia/Shanghai
+    volumes:
+      - mumu_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - mumu-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mumu -d mumu_novel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 应用服务
+  mumuainovel:
+    image: registry.cn-hangzhou.aliyuncs.com/your-namespace/mumuainovel:latest
+    container_name: mumuainovel
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    environment:
+      # 数据库连接（容器内网络）
+      - DATABASE_URL=postgresql+asyncpg://mumu:your_secure_password_here@postgres:5432/mumu_novel
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - POSTGRES_PASSWORD=your_secure_password_here
+      # 时区
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - mumu-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  mumu_postgres_data:
+    driver: local
+
+networks:
+  mumu-network:
+    driver: bridge

@@ -1,0 +1,49 @@
+# ==========================================
+# MuMuAINovel 宝塔面板部署配置
+# ==========================================
+# 复制此文件为 .env 并修改配置值
+# ==========================================
+
+# 应用配置
+APP_NAME=MuMuAINovel
+APP_HOST=0.0.0.0
+APP_PORT=8000
+DEBUG=false
+TZ=Asia/Shanghai
+
+# PostgreSQL 数据库配置
+POSTGRES_DB=mumu_novel
+POSTGRES_USER=mumu
+POSTGRES_PASSWORD=请修改为强密码
+POSTGRES_PORT=5432
+
+# AI 服务配置（必须配置至少一个）
+OPENAI_API_KEY=你的OpenAI密钥
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# 默认 AI 配置
+DEFAULT_AI_PROVIDER=openai
+DEFAULT_MODEL=gpt-4o-mini
+DEFAULT_TEMPERATURE=0.7
+DEFAULT_MAX_TOKENS=32000
+
+# LinuxDO OAuth 配置（可选）
+LINUXDO_CLIENT_ID=你的LinuxDO_ClientID
+LINUXDO_CLIENT_SECRET=你的LinuxDO_ClientSecret
+LINUXDO_REDIRECT_URI=https://你的域名.com/api/auth/linuxdo/callback
+FRONTEND_URL=https://你的域名.com
+
+# 本地账户登录配置
+LOCAL_AUTH_ENABLED=true
+LOCAL_AUTH_USERNAME=admin
+LOCAL_AUTH_PASSWORD=请修改管理员密码
+LOCAL_AUTH_DISPLAY_NAME=管理员
+
+# 会话配置
+SESSION_EXPIRE_MINUTES=120
+SESSION_REFRESH_THRESHOLD_MINUTES=30
+
+# 日志配置
+LOG_LEVEL=INFO
+LOG_TO_FILE=true
+LOG_FILE_PATH=logs/app.log

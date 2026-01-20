@@ -63,6 +63,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./.env:/app/.env:ro
+      - ./embedding:/app/embedding
     environment:
       # 应用配置
       - APP_NAME=${APP_NAME:-MuMuAINovel}
