@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     gemini_base_url: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     anthropic_base_url: Optional[str] = None
+    bailian_api_key: Optional[str] = None
+    bailian_base_url: Optional[str] = None
     default_ai_provider: str = "openai"
     default_model: str = "gpt-4"
     default_temperature: float = 0.7

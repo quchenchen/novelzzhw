@@ -104,6 +104,9 @@ services:
       - ARK_API_KEY=${ARK_API_KEY:-}
       - ARK_BASE_URL=${ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       - ARK_ENDPOINT_ID=${ARK_ENDPOINT_ID:-}
+      # 阿里云百炼配置
+      - BAILIAN_API_KEY=${BAILIAN_API_KEY:-}
+      - BAILIAN_BASE_URL=${BAILIAN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       - DEFAULT_AI_PROVIDER=${DEFAULT_AI_PROVIDER:-openai}
       - DEFAULT_MODEL=${DEFAULT_MODEL:-gpt-4o-mini}
       - DEFAULT_TEMPERATURE=${DEFAULT_TEMPERATURE:-0.7}

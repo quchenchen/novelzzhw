@@ -234,6 +234,7 @@ export default function SettingsPage() {
     // { value: 'anthropic', label: 'Anthropic (Claude)', defaultUrl: 'https://api.anthropic.com' },
     { value: 'gemini', label: 'Google Gemini', defaultUrl: 'https://generativelanguage.googleapis.com/v1beta' },
     { value: 'ark', label: '火山引擎 (Volcengine ARK)', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { value: 'bailian', label: '阿里云百炼 (Alibaba Bailian)', defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
   ];
 
   const handleProviderChange = (value: string) => {
@@ -1461,6 +1462,7 @@ export default function SettingsPage() {
                     <Select.Option value="openai">OpenAI</Select.Option>
                     <Select.Option value="gemini">Google Gemini</Select.Option>
                     <Select.Option value="ark">火山引擎 ARK</Select.Option>
+                    <Select.Option value="bailian">阿里云百炼</Select.Option>
                   </Select>
                 </Form.Item>
               </Col>

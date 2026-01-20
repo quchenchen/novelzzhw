@@ -256,7 +256,7 @@ async def get_available_models(
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            if provider == "openai" or provider == "azure" or provider == "custom" or provider == "ark":
+            if provider == "openai" or provider == "azure" or provider == "custom" or provider == "ark" or provider == "bailian":
                 # OpenAI 兼容接口获取模型列表
                 url = f"{api_base_url.rstrip('/')}/models"
                 headers = {
