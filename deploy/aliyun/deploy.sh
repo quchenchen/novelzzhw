@@ -192,6 +192,8 @@ services:
       - DB_PORT=5432
       - POSTGRES_PASSWORD=$DB_PASSWORD
       - TZ=Asia/Shanghai
+      # HuggingFace 镜像（国内服务器必需）
+      - HF_ENDPOINT=https://hf-mirror.com
     restart: unless-stopped
     networks:
       - mumu-network
