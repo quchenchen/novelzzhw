@@ -69,6 +69,24 @@ fi
 # 创建必要目录
 mkdir -p logs embedding
 
+# 检查是否已有 .env 文件，保留现有密码
+if [ -f ".env" ]; then
+    log_warn "检测到现有 .env 文件，保留当前配置"
+    # 从现有 .env 读取密码
+    if grep -q "POSTGRES_PASSWORD=" .env; then
+        EXISTING_DB_PASSWORD=$(grep "POSTGRES_PASSWORD=" .env | cut -d'=' -f2)
+        DB_PASSWORD=$EXISTING_DB_PASSWORD
+        log_info "使用现有数据库密码"
+    fi
+    if grep -q "LOCAL_AUTH_PASSWORD=" .env; then
+        EXISTING_ADMIN_PASSWORD=$(grep "LOCAL_AUTH_PASSWORD=" .env | cut -d'=' -f2)
+        ADMIN_PASSWORD=$EXISTING_ADMIN_PASSWORD
+        log_info "使用现有管理员密码"
+    fi
+else
+    log_info "首次部署，生成新密码..."
+fi
+
 # 构建镜像
 log_step "开始构建 Docker 镜像（约 10-20 分钟）..."
 docker build -t $IMAGE_NAME:latest -f Dockerfile .
@@ -216,9 +234,8 @@ log_warn "========================================="
 log_info "数据库密码: $DB_PASSWORD"
 log_info "管理员密码: $ADMIN_PASSWORD"
 log_info ""
-echo "DB_PASSWORD=$DB_PASSWORD" > .passwords
-echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> .passwords
-log_info "密码已保存到: ./.passwords"
+log_warn "  密码仅在终端显示，未保存到文件"
+log_warn "  请立即复制保存上述密码！"
 log_warn "========================================="
 log_info ""
 log_warn "后续操作："
@@ -231,4 +248,5 @@ log_info "常用命令:"
 log_info "  查看日志: docker compose logs -f"
 log_info "  重启服务: docker compose restart"
 log_info "  更新代码: git pull && docker compose up -d --build"
+log_info "  完全清理: docker compose down -v && rm -f .env"
 log_step "========================================="
