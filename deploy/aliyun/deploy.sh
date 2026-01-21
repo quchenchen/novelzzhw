@@ -150,7 +150,7 @@ EOF
 
 # 创建 docker-compose.yml
 log_step "创建 Docker Compose 配置..."
-cat > docker-compose.yml << EOF
+cat > docker-compose.yml << EOFYAML
 services:
   postgres:
     image: postgres:18-alpine
@@ -192,7 +192,6 @@ services:
       - DB_PORT=5432
       - POSTGRES_PASSWORD=$DB_PASSWORD
       - TZ=Asia/Shanghai
-      # HuggingFace 镜像（国内服务器必需）
       - HF_ENDPOINT=https://hf-mirror.com
     restart: unless-stopped
     networks:
@@ -211,7 +210,7 @@ volumes:
 networks:
   mumu-network:
     driver: bridge
-EOF
+EOFYAML
 
 # 启动服务
 log_step "启动服务..."

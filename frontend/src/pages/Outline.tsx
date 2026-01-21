@@ -166,10 +166,13 @@ export default function Outline() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]); // 只依赖 ID，不依赖函数
 
-  // ✅ 新增：加载所有大纲的展开状态
+  // ✅ 加载所有大纲的展开状态
   useEffect(() => {
     const loadExpandStatus = async () => {
-      if (outlines.length === 0) return;
+      if (outlines.length === 0) {
+        setOutlineExpandStatus({});
+        return;
+      }
 
       const statusMap: Record<string, boolean> = {};
       for (const outline of outlines) {
@@ -1402,8 +1405,14 @@ export default function Outline() {
 
       console.log('✅ 使用缓存的规划创建章节，避免了重复的AI调用');
 
+      // ✅ 立即更新展开状态，避免刷新后丢失状态
+      setOutlineExpandStatus(prev => ({
+        ...prev,
+        [outlineId]: true
+      }));
+
       // 刷新大纲和章节列表
-      refreshOutlines();
+      await refreshOutlines();
 
     } catch (error) {
       console.error('创建章节失败:', error);
@@ -1775,11 +1784,20 @@ export default function Outline() {
         console.error('失败详情:', errors);
       }
 
+      // ✅ 更新所有展开大纲的状态
+      if (cachedBatchExpansionResponse) {
+        const newStatus: Record<string, boolean> = {};
+        for (const result of cachedBatchExpansionResponse.expansion_results) {
+          newStatus[result.outline_id] = true;
+        }
+        setOutlineExpandStatus(prev => ({ ...prev, ...newStatus }));
+      }
+
       // 清除缓存
       setCachedBatchExpansionResponse(null);
 
       // 刷新列表
-      refreshOutlines();
+      await refreshOutlines();
 
     } catch (error) {
       console.error('批量创建章节失败:', error);

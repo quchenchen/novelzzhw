@@ -125,3 +125,4 @@ embedding/
 
 # 产品文档（自动生成）
 PRODUCT_DOCUMENTATION.md
+deploy/aliyun/deploy.sh
