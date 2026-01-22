@@ -139,10 +139,10 @@ export default function ProjectWizardNew() {
           rules={[{ required: true, message: '请输入小说简介' }]}
         >
           <TextArea
-            rows={3}
-            placeholder="用一段话介绍你的小说..."
+            rows={6}
+            placeholder="用一段话介绍你的小说，可包含主角背景、核心冲突、故事走向等..."
             showCount
-            maxLength={300}
+            maxLength={1000}
           />
         </Form.Item>
 
