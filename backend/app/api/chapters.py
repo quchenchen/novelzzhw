@@ -1,5 +1,5 @@
 """章节管理API"""
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -54,6 +54,86 @@ logger = get_logger(__name__)
 
 # 全局数据库写入锁（每个用户一个锁，用于保护SQLite写入操作）
 db_write_locks: dict[str, Lock] = {}
+
+
+# ==================== 后台任务管理器 ====================
+# 用于跟踪后台分析任务的实际运行状态，而不是简单依赖时间判断
+
+class AnalysisTaskTracker:
+    """分析任务跟踪器 - 跟踪 asyncio.Task 的实际运行状态"""
+
+    def __init__(self):
+        # task_id -> asyncio.Task 映射
+        self._running_tasks: dict[str, asyncio.Task] = {}
+        # task_id -> 启动时间（用于心跳检测）
+        self._start_times: dict[str, datetime] = {}
+        self._lock = Lock()
+
+    def register_task(self, task_id: str, task: asyncio.Task) -> None:
+        """注册新任务"""
+        self._running_tasks[task_id] = task
+        self._start_times[task_id] = datetime.now()
+        logger.debug(f"📋 注册分析任务: {task_id[:8]}..., 当前运行任务数: {len(self._running_tasks)}")
+
+    def is_task_running(self, task_id: str) -> bool:
+        """检查任务是否真的在运行"""
+        if task_id not in self._running_tasks:
+            return False
+
+        task = self._running_tasks[task_id]
+
+        # 检查任务状态
+        if task.done():
+            # 任务已完成，检查是否有异常
+            if task.cancelled():
+                logger.info(f"🔍 任务 {task_id[:8]}... 已被取消")
+                self._remove_task(task_id)
+                return False
+            elif task.exception():
+                logger.warning(f"🔍 任务 {task_id[:8]}... 异常结束: {task.exception()}")
+                self._remove_task(task_id)
+                return False
+            else:
+                logger.info(f"🔍 任务 {task_id[:8]}... 正常完成")
+                self._remove_task(task_id)
+                return False
+
+        # 任务仍在运行
+        return True
+
+    def get_task_age_seconds(self, task_id: str) -> Optional[int]:
+        """获取任务运行时长（秒）"""
+        if task_id not in self._start_times:
+            return None
+        return int((datetime.now() - self._start_times[task_id]).total_seconds())
+
+    def _remove_task(self, task_id: str) -> None:
+        """从跟踪器中移除任务"""
+        self._running_tasks.pop(task_id, None)
+        self._start_times.pop(task_id, None)
+
+    def cleanup_stale_tasks(self, max_age_seconds: int = 600) -> int:
+        """清理超过指定时长的已过期任务记录"""
+        current_time = datetime.now()
+        stale_task_ids = []
+        for task_id, start_time in self._start_times.items():
+            if (current_time - start_time).total_seconds() > max_age_seconds:
+                # 检查任务是否已完成
+                task = self._running_tasks.get(task_id)
+                if task and task.done():
+                    stale_task_ids.append(task_id)
+
+        for task_id in stale_task_ids:
+            self._remove_task(task_id)
+
+        if stale_task_ids:
+            logger.debug(f"🧹 清理 {len(stale_task_ids)} 个过期任务记录")
+
+        return len(stale_task_ids)
+
+
+# 全局任务跟踪器实例
+analysis_task_tracker = AnalysisTaskTracker()
 
 
 async def get_db_write_lock(user_id: str) -> Lock:
@@ -1223,7 +1303,6 @@ async def analyze_chapter_background(
 async def generate_chapter_content_stream(
     chapter_id: str,
     request: Request,
-    background_tasks: BackgroundTasks,
     generate_request: ChapterGenerateRequest = ChapterGenerateRequest(),
     user_ai_service: AIService = Depends(get_user_ai_service)
 ):
@@ -1643,16 +1722,19 @@ async def generate_chapter_content_stream(
                 
                 # 短暂延迟确保SQLite WAL完成写入
                 await asyncio.sleep(0.05)
-                
-                # 直接启动后台分析（并发执行）
-                background_tasks.add_task(
-                    analyze_chapter_background,
-                    chapter_id=chapter_id,
-                    user_id=current_user_id,
-                    project_id=project.id,
-                    task_id=task_id,
-                    ai_service=user_ai_service
+
+                # 直接启动后台分析（使用 asyncio.create_task 以便跟踪）
+                analysis_task_obj = asyncio.create_task(
+                    analyze_chapter_background(
+                        chapter_id=chapter_id,
+                        user_id=current_user_id,
+                        project_id=project.id,
+                        task_id=task_id,
+                        ai_service=user_ai_service
+                    )
                 )
+                # 注册到任务跟踪器
+                analysis_task_tracker.register_task(task_id, analysis_task_obj)
                 
                 yield await tracker.saving("章节保存完成", 0.8)
                 
@@ -1729,11 +1811,13 @@ async def get_analysis_task_status(
 ):
     """
     查询指定章节的最新分析任务状态
-    
-    自动恢复机制：
-    - 如果任务状态为running且超过1分钟未更新，自动标记为failed
-    - 如果任务状态为pending且超过2分钟未启动，自动标记为failed
-    
+
+    自动恢复机制（方案三：检查进程状态）：
+    - 通过 asyncio.Task 检查任务是否真的在运行
+    - 只有任务真的失败（异常结束）才标记为 failed
+    - 不再使用简单的时间判断
+    - pending 任务超过 5 分钟未启动才标记为失败
+
     返回:
     - has_task: 是否存在分析任务
     - task_id: 任务ID（如果存在）
@@ -1743,24 +1827,24 @@ async def get_analysis_task_status(
     - auto_recovered: 是否被自动恢复
     - created_at: 创建时间
     - completed_at: 完成时间
-    
+
     注意：当章节不存在或无权访问时返回404，当没有分析任务时返回has_task=false
     """
     from datetime import timedelta
-    
+
     # 先获取章节以验证存在性和权限
     chapter_result = await db.execute(
         select(Chapter).where(Chapter.id == chapter_id)
     )
     chapter = chapter_result.scalar_one_or_none()
-    
+
     if not chapter:
         raise HTTPException(status_code=404, detail="章节不存在")
-    
+
     # 验证用户权限
     user_id = getattr(request.state, 'user_id', None)
     await verify_project_access(chapter.project_id, user_id, db)
-    
+
     # 获取该章节最新的分析任务
     result = await db.execute(
         select(AnalysisTask)
@@ -1769,7 +1853,7 @@ async def get_analysis_task_status(
         .limit(1)
     )
     task = result.scalar_one_or_none()
-    
+
     if not task:
         # 返回无任务状态，而不是抛出404错误
         return {
@@ -1784,35 +1868,59 @@ async def get_analysis_task_status(
             "started_at": None,
             "completed_at": None
         }
-    
+
     auto_recovered = False
     current_time = datetime.now()
-    
-    # 自动恢复卡住的任务
+
+    # 定期清理过期的任务记录
+    analysis_task_tracker.cleanup_stale_tasks(max_age_seconds=600)
+
+    # ==================== 方案三：检查进程状态 ====================
     if task.status == 'running':
-        # 如果任务在running状态超过1分钟，标记为失败
-        if task.started_at and (current_time - task.started_at) > timedelta(minutes=1):
-            task.status = 'failed'
-            task.error_message = '任务超时（超过1分钟未完成，已自动恢复）'
-            task.completed_at = current_time
-            task.progress = 0
-            auto_recovered = True
-            await db.commit()
-            await db.refresh(task)
-            logger.warning(f"🔄 自动恢复卡住的任务: {task.id}, 章节: {chapter_id}")
-    
+        # 检查任务是否真的在运行
+        is_actually_running = analysis_task_tracker.is_task_running(task.id)
+
+        if not is_actually_running:
+            # 任务不在跟踪器中或已完成，需要检查是否真的失败了
+            # 如果数据库状态是 running 但任务已经不在跟踪器中，说明进程真的结束了
+            task_age = analysis_task_tracker.get_task_age_seconds(task.id)
+            if task_age is None:
+                # 任务从未被注册到跟踪器（可能是服务器重启）
+                # 只有超过一定时间才认为是失败，给任务一个启动的机会
+                if task.started_at and (current_time - task.started_at) > timedelta(minutes=5):
+                    task.status = 'failed'
+                    task.error_message = '任务进程已终止（服务器可能重启，请重试）'
+                    task.completed_at = current_time
+                    task.progress = 0
+                    auto_recovered = True
+                    await db.commit()
+                    await db.refresh(task)
+                    logger.warning(f"🔄 自动恢复已终止的任务: {task.id}, 章节: {chapter_id}")
+            else:
+                # 任务曾经被注册但现在已经不在跟踪器中，且没有正常完成
+                # 说明进程异常结束了
+                task.status = 'failed'
+                task.error_message = '任务进程异常终止'
+                task.completed_at = current_time
+                task.progress = 0
+                auto_recovered = True
+                await db.commit()
+                await db.refresh(task)
+                logger.warning(f"🔄 自动恢复异常终止的任务: {task.id}, 章节: {chapter_id}, 运行时长: {task_age}秒")
+
     elif task.status == 'pending':
-        # 如果任务在pending状态超过2分钟仍未开始，标记为失败
-        if task.created_at and (current_time - task.created_at) > timedelta(minutes=2):
+        # pending 任务：超过 5 分钟未启动才标记为失败
+        # 这是因为可能有很多任务在排队
+        if task.created_at and (current_time - task.created_at) > timedelta(minutes=5):
             task.status = 'failed'
-            task.error_message = '任务启动超时（超过2分钟未启动，已自动恢复）'
+            task.error_message = '任务启动超时（队列等待时间过长，请重试）'
             task.completed_at = current_time
             task.progress = 0
             auto_recovered = True
             await db.commit()
             await db.refresh(task)
             logger.warning(f"🔄 自动恢复未启动的任务: {task.id}, 章节: {chapter_id}")
-    
+
     return {
         "has_task": True,
         "task_id": task.id,
@@ -2043,7 +2151,6 @@ async def get_chapter_annotations(
 async def trigger_chapter_analysis(
     chapter_id: str,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user_ai_service: AIService = Depends(get_user_ai_service)
 ):
@@ -2095,16 +2202,19 @@ async def trigger_chapter_analysis(
     
     # 短暂延迟确保SQLite WAL完成写入（让其他会话可见）
     await asyncio.sleep(3)
-    
-    # 直接启动后台分析（并发执行）
-    background_tasks.add_task(
-        analyze_chapter_background,
-        chapter_id=chapter_id,
-        user_id=user_id,
-        project_id=project.id,
-        task_id=task_id,
-        ai_service=user_ai_service
+
+    # 直接启动后台分析（使用 asyncio.create_task 以便跟踪）
+    analysis_task_obj = asyncio.create_task(
+        analyze_chapter_background(
+            chapter_id=chapter_id,
+            user_id=user_id,
+            project_id=project.id,
+            task_id=task_id,
+            ai_service=user_ai_service
+        )
     )
+    # 注册到任务跟踪器
+    analysis_task_tracker.register_task(task_id, analysis_task_obj)
     
     return {
         "task_id": task_id,
@@ -2140,7 +2250,6 @@ async def batch_generate_chapters_in_order(
     project_id: str,
     batch_request: BatchGenerateRequest,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user_ai_service: AIService = Depends(get_user_ai_service)
 ):
@@ -2221,14 +2330,15 @@ async def batch_generate_chapters_in_order(
     )
     
     logger.info(f"📦 创建批量生成任务: {batch_id}, 章节: 第{start_number}-{end_number}章, 预估耗时: {estimated_time}分钟")
-    
+
     # 启动后台批量生成任务，传递model参数
-    background_tasks.add_task(
-        execute_batch_generation_in_order,
-        batch_id=batch_id,
-        user_id=user_id,
-        ai_service=user_ai_service,
-        custom_model=batch_request.model
+    asyncio.create_task(
+        execute_batch_generation_in_order(
+            batch_id=batch_id,
+            user_id=user_id,
+            ai_service=user_ai_service,
+            custom_model=batch_request.model
+        )
     )
     
     return BatchGenerateResponse(
@@ -2935,7 +3045,6 @@ async def regenerate_chapter_stream(
     chapter_id: str,
     request: Request,
     regenerate_request: ChapterRegenerateRequest,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user_ai_service: AIService = Depends(get_user_ai_service)
 ):
