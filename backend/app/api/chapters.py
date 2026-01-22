@@ -1579,7 +1579,8 @@ async def generate_chapter_content_stream(
                         previous_chapter_summary=previous_summary,
                         # P2 参考参数（动态裁剪后的）
                         story_skeleton=chapter_context.story_skeleton or '',
-                        relevant_memories=chapter_context.relevant_memories or ''
+                        relevant_memories=chapter_context.relevant_memories or '',
+                        character_identities=chapter_context.character_identities or '暂无特殊身份信息'
                     )
                 else:
                     # 第一章，使用无前置内容模板
@@ -1595,7 +1596,9 @@ async def generate_chapter_content_stream(
                         # P1 重要参数
                         genre=project.genre or '未设定',
                         narrative_perspective=chapter_perspective,
-                        characters_info=characters_info or '暂无角色信息'
+                        characters_info=characters_info or '暂无角色信息',
+                        # P2 参考参数
+                        character_identities=chapter_context.character_identities or '暂无特殊身份信息'
                     )
                 
                 # 应用写作风格

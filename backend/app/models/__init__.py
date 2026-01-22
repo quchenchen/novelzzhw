@@ -17,6 +17,9 @@ from app.models.regeneration_task import RegenerationTask
 from app.models.career import Career, CharacterCareer
 from app.models.prompt_template import PromptTemplate
 from app.models.foreshadow import Foreshadow
+from app.models.identity import Identity
+from app.models.identity_career import IdentityCareer
+from app.models.identity_knowledge import IdentityKnowledge
 
 __all__ = [
     "Project",
@@ -42,5 +45,8 @@ __all__ = [
     "Career",
     "CharacterCareer",
     "PromptTemplate",
-    "Foreshadow"
+    "Foreshadow",
+    "Identity",
+    "IdentityCareer",
+    "IdentityKnowledge"
 ]

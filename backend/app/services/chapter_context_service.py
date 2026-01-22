@@ -13,6 +13,9 @@ from app.models.character import Character
 from app.models.career import Career, CharacterCareer
 from app.models.memory import StoryMemory
 from app.models.foreshadow import Foreshadow
+from app.models.identity import Identity
+from app.models.identity_career import IdentityCareer
+from app.models.identity_knowledge import IdentityKnowledge
 from app.logger import get_logger
 
 logger = get_logger(__name__)
@@ -58,6 +61,7 @@ class ChapterContext:
     story_skeleton: Optional[str] = None      # 故事骨架（50章+启用）
     mcp_references: Optional[str] = None      # MCP参考资料
     foreshadow_reminders: Optional[str] = None  # 伏笔提醒（新增）
+    character_identities: Optional[str] = None  # 角色身份信息（新增）
     
     # === 元信息 ===
     context_stats: Dict[str, Any] = field(default_factory=dict)  # 统计信息
@@ -67,7 +71,7 @@ class ChapterContext:
         total = 0
         for field_name in ['chapter_outline', 'continuation_point', 'chapter_characters',
                           'relevant_memories', 'story_skeleton', 'style_instruction',
-                          'foreshadow_reminders', 'previous_chapter_summary']:
+                          'foreshadow_reminders', 'previous_chapter_summary', 'character_identities']:
             value = getattr(self, field_name, None)
             if value:
                 total += len(value)
@@ -222,7 +226,14 @@ class ChapterContextBuilder:
             )
             if context.foreshadow_reminders:
                 logger.info(f"  ✅ 伏笔提醒: {len(context.foreshadow_reminders)}字符")
-        
+
+        # === P2-角色身份信息（新增）===
+        context.character_identities = await self._build_character_identities(
+            chapter, project, db
+        )
+        if context.character_identities:
+            logger.info(f"  ✅ 角色身份: {len(context.character_identities)}字符")
+
         # === 统计信息 ===
         context.context_stats = {
             "chapter_number": chapter_number,
@@ -232,6 +243,7 @@ class ChapterContextBuilder:
             "memories_length": len(context.relevant_memories or ""),
             "skeleton_length": len(context.story_skeleton or ""),
             "foreshadow_length": len(context.foreshadow_reminders or ""),
+            "identities_length": len(context.character_identities or ""),
             "total_length": context.get_total_context_length()
         }
         
@@ -787,6 +799,180 @@ class ChapterContextBuilder:
             
         except Exception as e:
             logger.error(f"❌ 构建故事骨架失败: {str(e)}")
+            return None
+
+    async def _build_character_identities(
+        self,
+        chapter: Chapter,
+        project: Project,
+        db: AsyncSession
+    ) -> Optional[str]:
+        """
+        构建本章涉及角色的身份信息
+
+        为每个本章涉及的角色添加身份上下文：
+        - 当前使用的身份（如果角色有多个身份）
+        - 身份类型和状态
+        - 谁知道了这个身份（认知关系）
+        - 身份相关的职业信息
+
+        Args:
+            chapter: 章节对象
+            project: 项目对象
+            db: 数据库会话
+
+        Returns:
+            格式化的角色身份信息文本
+        """
+        try:
+            # 获取所有角色
+            characters_result = await db.execute(
+                select(Character).where(Character.project_id == project.id)
+            )
+            characters = characters_result.scalars().all()
+
+            if not characters:
+                return None
+
+            # 提取本章相关角色名单
+            filter_character_names = None
+
+            # 从大纲或扩展计划中提取角色
+            if project.outline_mode == 'one-to-one':
+                outline_result = await db.execute(
+                    select(Outline).where(
+                        Outline.project_id == project.id,
+                        Outline.chapter_number == chapter.chapter_number
+                    )
+                )
+                outline = outline_result.scalar_one_or_none()
+                if outline and outline.structure:
+                    try:
+                        structure = json.loads(outline.structure)
+                        filter_character_names = structure.get('characters', [])
+                    except json.JSONDecodeError:
+                        pass
+            else:
+                if chapter.expansion_plan:
+                    try:
+                        plan = json.loads(chapter.expansion_plan)
+                        filter_character_names = plan.get('character_focus', [])
+                    except json.JSONDecodeError:
+                        pass
+
+            # 筛选角色
+            if filter_character_names:
+                characters = [c for c in characters if c.name in filter_character_names]
+
+            if not characters:
+                return None
+
+            # 构建身份信息
+            identity_lines = []
+            identity_lines.append("【角色身份信息】")
+
+            for character in characters[:8]:  # 最多8个角色
+                # 获取角色的所有身份
+                identities_result = await db.execute(
+                    select(Identity).where(
+                        Identity.character_id == character.id,
+                        Identity.status == 'active'  # 只包含活跃身份
+                    ).order_by(Identity.is_primary.desc(), Identity.created_at.asc())
+                )
+                identities = identities_result.scalars().all()
+
+                if not identities:
+                    continue
+
+                # 如果只有一个主身份，跳过（这是默认情况，不需要特殊说明）
+                if len(identities) == 1 and identities[0].is_primary:
+                    continue
+
+                # 角色有多个身份或特殊身份时，添加信息
+                identity_lines.append(f"\n角色：{character.name}")
+
+                for identity in identities:
+                    # 身份类型中文映射
+                    type_map = {
+                        'real': '真身',
+                        'public': '公开',
+                        'secret': '隐藏',
+                        'disguise': '伪装'
+                    }
+                    type_label = type_map.get(identity.identity_type, identity.identity_type)
+
+                    # 身份标签
+                    labels = [f"{type_label}"]
+                    if identity.is_primary:
+                        labels.append("主身份")
+                    if identity.identity_type in ('secret', 'disguise'):
+                        labels.append("需保密")
+
+                    # 获取身份的职业
+                    careers_result = await db.execute(
+                        select(IdentityCareer).where(IdentityCareer.identity_id == identity.id)
+                    )
+                    identity_careers = careers_result.scalars().all()
+
+                    career_info = ""
+                    if identity_careers:
+                        career_names = []
+                        for ic in identity_careers:
+                            career_result = await db.execute(
+                                select(Career).where(Career.id == ic.career_id)
+                            )
+                            career = career_result.scalar_one_or_none()
+                            if career:
+                                stage_name = ""
+                                if career.stages:
+                                    try:
+                                        stages = json.loads(career.stages)
+                                        for stage in stages:
+                                            if stage.get('level') == ic.current_stage:
+                                                stage_name = f"·{stage.get('name')}"
+                                                break
+                                    except:
+                                        pass
+                                career_names.append(f"{career.name}{stage_name}")
+                        if career_names:
+                            career_info = f" | 职业: {', '.join(career_names)}"
+
+                    # 获取谁知道了这个身份
+                    knowledge_result = await db.execute(
+                        select(IdentityKnowledge).where(IdentityKnowledge.identity_id == identity.id)
+                    )
+                    knowledge_list = knowledge_result.scalars().all()
+
+                    knowledge_info = ""
+                    if knowledge_list:
+                        knower_names = []
+                        for knowledge in knowledge_list:
+                            knower_result = await db.execute(
+                                select(Character).where(Character.id == knowledge.knower_character_id)
+                            )
+                            knower = knower_result.scalar_one_or_none()
+                            if knower:
+                                level_map = {
+                                    'full': '完全知晓',
+                                    'partial': '部分知晓',
+                                    'suspected': '怀疑'
+                                }
+                                knower_info = f"{knower.name}({level_map.get(knowledge.knowledge_level, knowledge.knowledge_level)})"
+                                knower_names.append(knower_info)
+
+                        if knower_names:
+                            knowledge_info = f" | 被知晓: {', '.join(knower_names)}"
+
+                    identity_lines.append(f"  - {identity.name} [{', '.join(labels)}]{career_info}{knowledge_info}")
+
+            # 如果只有标题没有内容，返回None
+            if len(identity_lines) <= 1:
+                return None
+
+            return "\n".join(identity_lines)
+
+        except Exception as e:
+            logger.error(f"❌ 构建角色身份信息失败: {str(e)}")
             return None
 
 

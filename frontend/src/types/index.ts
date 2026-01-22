@@ -881,3 +881,6 @@ export interface ForeshadowContextResponse {
   overdue: Foreshadow[];
   recently_planted: Foreshadow[];
 }
+
+// 身份系统类型 - 导出 identity 模块
+export * from './identity';

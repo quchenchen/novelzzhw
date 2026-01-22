@@ -589,6 +589,15 @@ class PromptService:
 {characters_info}
 </characters>
 
+<identities priority="P2">
+【角色身份信息 - 重要】
+{character_identities}
+⚠️ 如果角色有多个身份，请在生成时注意：
+- 角色在不同场合使用不同身份时的表现差异
+- 隐藏身份的角色需要保护秘密
+- 谁知道了哪些身份会影响对话和互动方式
+</identities>
+
 <constraints>
 【必须遵守】
 ✅ 严格按照大纲推进情节
@@ -648,6 +657,15 @@ class PromptService:
 【本章角色】
 {characters_info}
 </characters>
+
+<identities priority="P2">
+【角色身份信息 - 重要】
+{character_identities}
+⚠️ 如果角色有多个身份，请在生成时注意：
+- 角色在不同场合使用不同身份时的表现差异
+- 隐藏身份的角色需要保护秘密
+- 谁知道了哪些身份会影响对话和互动方式
+</identities>
 
 <foreshadow_reminders priority="P1">
 【🎯 伏笔提醒 - 需关注】
