@@ -808,13 +808,12 @@ class ChapterContextBuilder:
         db: AsyncSession
     ) -> Optional[str]:
         """
-        构建本章涉及角色的身份信息
+        构建本章涉及角色的身份信息（增强版：智能过滤）
 
-        为每个本章涉及的角色添加身份上下文：
-        - 当前使用的身份（如果角色有多个身份）
-        - 身份类型和状态
-        - 谁知道了这个身份（认知关系）
-        - 身份相关的职业信息
+        新增功能：
+        1. 智能过滤：只包含本章相关的身份信息
+        2. 状态感知：根据剧情进度过滤已暴露/未暴露身份
+        3. 关系提示：提醒作者谁知道了哪些身份
 
         Args:
             chapter: 章节对象
@@ -867,16 +866,15 @@ class ChapterContextBuilder:
             if not characters:
                 return None
 
-            # 构建身份信息
+            # 构建身份信息（增强版）
             identity_lines = []
-            identity_lines.append("【角色身份信息】")
+            identity_lines.append("【角色身份信息 - 智能过滤】")
 
             for character in characters[:8]:  # 最多8个角色
-                # 获取角色的所有身份
+                # 获取角色的所有身份（包括active和burned状态）
                 identities_result = await db.execute(
                     select(Identity).where(
-                        Identity.character_id == character.id,
-                        Identity.status == 'active'  # 只包含活跃身份
+                        Identity.character_id == character.id
                     ).order_by(Identity.is_primary.desc(), Identity.created_at.asc())
                 )
                 identities = identities_result.scalars().all()
@@ -884,14 +882,47 @@ class ChapterContextBuilder:
                 if not identities:
                     continue
 
-                # 如果只有一个主身份，跳过（这是默认情况，不需要特殊说明）
-                if len(identities) == 1 and identities[0].is_primary:
+                # 如果只有一个主身份且状态为active，跳过（这是默认情况）
+                active_identities = [i for i in identities if i.status == 'active']
+                if len(identities) == 1 and identities[0].is_primary and identities[0].status == 'active':
                     continue
 
                 # 角色有多个身份或特殊身份时，添加信息
                 identity_lines.append(f"\n角色：{character.name}")
 
                 for identity in identities:
+                    # 时间线感知：根据目标章节计算身份当时的状态
+                    is_exposed_at_this_chapter = identity.is_exposed_at_chapter(chapter.chapter_number)
+
+                    # 智能过滤：隐藏身份如果未被本章角色知晓，则不显示或标记为"不应知晓"
+                    should_show_identity = True
+                    visibility_note = ""
+
+                    if is_exposed_at_this_chapter:
+                        visibility_note = " [已暴露]"
+                    elif identity.identity_type in ('secret', 'disguise'):
+                        # 检查是否有本章角色知晓这个身份
+                        knowledge_result = await db.execute(
+                            select(IdentityKnowledge).where(
+                                IdentityKnowledge.identity_id == identity.id
+                            )
+                        )
+                        knowledge_list = knowledge_result.scalars().all()
+
+                        # 检查知晓者是否在本章角色列表中
+                        known_by_chapter_characters = False
+                        for knowledge in knowledge_list:
+                            if knowledge.knower_character_id in [c.id for c in characters]:
+                                known_by_chapter_characters = True
+                                break
+
+                        if not known_by_chapter_characters and filter_character_names:
+                            # 隐藏身份未被本章角色知晓，添加提醒
+                            visibility_note = " [本章角色不应知晓]"
+                            # 仍然显示，因为作者可能需要这个上下文
+                        elif knowledge_list:
+                            visibility_note = f" [被{len(knowledge_list)}人知晓]"
+
                     # 身份类型中文映射
                     type_map = {
                         'real': '真身',
@@ -905,7 +936,11 @@ class ChapterContextBuilder:
                     labels = [f"{type_label}"]
                     if identity.is_primary:
                         labels.append("主身份")
-                    if identity.identity_type in ('secret', 'disguise'):
+                    # 使用时间线感知的状态
+                    status_at_chapter = identity.get_status_at_chapter(chapter.chapter_number)
+                    if status_at_chapter == 'burned':
+                        labels.append("已暴露")
+                    elif identity.identity_type in ('secret', 'disguise'):
                         labels.append("需保密")
 
                     # 获取身份的职业
@@ -952,18 +987,21 @@ class ChapterContextBuilder:
                             )
                             knower = knower_result.scalar_one_or_none()
                             if knower:
+                                # 检查知晓者是否在本章角色中
+                                in_chapter = knower.id in [c.id for c in characters]
+                                in_chapter_mark = " ✓" if in_chapter else ""
                                 level_map = {
                                     'full': '完全知晓',
                                     'partial': '部分知晓',
                                     'suspected': '怀疑'
                                 }
-                                knower_info = f"{knower.name}({level_map.get(knowledge.knowledge_level, knowledge.knowledge_level)})"
+                                knower_info = f"{knower.name}{in_chapter_mark}({level_map.get(knowledge.knowledge_level, knowledge.knowledge_level)})"
                                 knower_names.append(knower_info)
 
                         if knower_names:
                             knowledge_info = f" | 被知晓: {', '.join(knower_names)}"
 
-                    identity_lines.append(f"  - {identity.name} [{', '.join(labels)}]{career_info}{knowledge_info}")
+                    identity_lines.append(f"  - {identity.name} [{', '.join(labels)}]{visibility_note}{career_info}{knowledge_info}")
 
             # 如果只有标题没有内容，返回None
             if len(identity_lines) <= 1:

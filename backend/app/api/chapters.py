@@ -1090,11 +1090,32 @@ async def analyze_chapter_background(
                 db_session.add(plot_analysis)
             
             await db_session.commit()
-            
+
             task.progress = 80
             await db_session.commit()
-        
-        # 5. 清理旧的分析伏笔（重新分析时需要先清理）
+
+        # 5. 处理身份暴露事件（新增：分身系统集成）
+        identity_exposures = analysis_result.get("identity_exposures", [])
+        if identity_exposures:
+            try:
+                from app.services.identity_exposure_service import identity_exposure_service
+
+                async with write_lock:
+                    exposure_results = await identity_exposure_service.process_chapter_identity_exposures(
+                        analysis_result=analysis_result,
+                        chapter_number=chapter.chapter_number,
+                        chapter_id=chapter_id,
+                        project_id=project_id,
+                        db=db_session
+                    )
+                    await db_session.commit()
+
+                if exposure_results:
+                    logger.info(f"🎭 处理了 {len(exposure_results)} 个身份暴露事件")
+            except Exception as exposure_error:
+                logger.warning(f"⚠️ 处理身份暴露事件失败（继续分析）: {str(exposure_error)}")
+
+        # 6. 清理旧的分析伏笔（重新分析时需要先清理）
         try:
             async with write_lock:
                 clean_result = await foreshadow_service.clean_chapter_analysis_foreshadows(

@@ -1,5 +1,5 @@
 """角色关系和组织管理数据模型"""
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Boolean, Index, text
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid
@@ -87,30 +87,57 @@ class Organization(Base):
 class OrganizationMember(Base):
     """组织成员关系表"""
     __tablename__ = "organization_members"
-    
+
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), comment="成员关系ID")
     organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True, comment="组织ID")
     character_id = Column(String(36), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True, comment="角色ID")
-    
+
+    # 新增：身份ID（可选，用于标记该成员关系关联的具体身份）
+    identity_id = Column(
+        String(36),
+        ForeignKey("identities.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联的身份ID（可选），支持角色的特定身份加入组织"
+    )
+
     # 职位信息
     position = Column(String(100), nullable=False, comment="职位名称")
     rank = Column(Integer, default=0, comment="职位等级")
-    
+
     # 成员状态
-    status = Column(String(20), default="active", comment="状态：active/retired/expelled/deceased")
+    status = Column(String(20), default="active", comment="状态：active/retired/expelled/deceased/suspected")
     joined_at = Column(String(100), comment="加入时间（故事时间）")
     left_at = Column(String(100), comment="离开时间（故事时间）")
-    
+
     # 成员属性
     loyalty = Column(Integer, default=50, comment="忠诚度：0-100")
     contribution = Column(Integer, default=0, comment="贡献度：0-100")
-    
+
     # 来源标识
     source = Column(String(20), default="ai", comment="来源：ai/manual")
-    
+
     notes = Column(Text, comment="备注")
     created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
-    
+
+    # 唯一性约束：同一角色的同一身份在同一组织中只能有一条记录
+    # 对于没有identity_id的记录（角色本身加入），则organization_id + character_id + NULL必须唯一
+    __table_args__ = (
+        Index(
+            'idx_org_member_identity_unique',
+            'organization_id', 'character_id',
+            unique=True,
+            postgresql_where=text("identity_id IS NOT NULL")
+        ),
+        Index(
+            'idx_org_member_character_unique',
+            'organization_id', 'character_id',
+            unique=True,
+            postgresql_where=text("identity_id IS NULL")
+        ),
+    )
+
     def __repr__(self):
+        if self.identity_id:
+            return f"<OrganizationMember(id={self.id}, org={self.organization_id}, char={self.character_id}, identity={self.identity_id})>"
         return f"<OrganizationMember(id={self.id}, org={self.organization_id}, char={self.character_id})>"

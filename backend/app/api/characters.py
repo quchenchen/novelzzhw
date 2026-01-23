@@ -902,7 +902,51 @@ async def generate_character_stream(
             await db.flush()
             
             logger.info(f"✅ 角色创建成功：{character.name} (ID: {character.id})")
-            
+
+            # 处理身份数据（新增：支持角色生成时创建初始身份）
+            if not is_organization:
+                from app.models.identity import Identity
+                identities_spec = character_data.get("identities", [])
+
+                if identities_spec and isinstance(identities_spec, list):
+                    logger.info(f"🎭 开始处理 {len(identities_spec)} 个身份")
+                    created_identities = 0
+
+                    for idx, identity_data in enumerate(identities_spec):
+                        try:
+                            identity = Identity(
+                                project_id=request.project_id,
+                                character_id=character.id,
+                                name=identity_data.get("name", character.name),
+                                identity_type=identity_data.get("identity_type", "real"),
+                                is_primary=identity_data.get("is_primary", idx == 0),
+                                status=identity_data.get("status", "active"),
+                                appearance=identity_data.get("appearance"),
+                                personality=identity_data.get("personality"),
+                                background=identity_data.get("background"),
+                                voice_style=identity_data.get("voice_style")
+                            )
+                            db.add(identity)
+                            created_identities += 1
+                            logger.info(f"  ✅ 创建身份: {identity.name} ({identity.identity_type})")
+                        except Exception as e:
+                            logger.warning(f"  ⚠️ 创建身份失败: {str(e)}")
+
+                    if created_identities > 0:
+                        logger.info(f"✅ 成功创建 {created_identities} 个身份")
+                else:
+                    # 创建默认主身份
+                    default_identity = Identity(
+                        project_id=request.project_id,
+                        character_id=character.id,
+                        name=character.name,
+                        identity_type="real",
+                        is_primary=True,
+                        status="active"
+                    )
+                    db.add(default_identity)
+                    logger.info(f"✅ 创建默认主身份: {character.name}")
+
             # 处理主职业关联
             if main_career_id and not is_organization:
                 from app.models.career import CharacterCareer, Career
@@ -1069,20 +1113,21 @@ async def generate_character_stream(
                     
                     logger.info(f"✅ 成功创建 {created_rels} 条关系记录")
             
-            # 处理组织成员关系（仅针对非组织角色）
+            # 处理组织成员关系（仅针对非组织角色，支持基于身份的成员关系）
             if not is_organization:
+                from app.models.identity import Identity
                 org_memberships = character_data.get("organization_memberships", [])
                 if org_memberships and isinstance(org_memberships, list):
                     logger.info(f"🏢 开始处理 {len(org_memberships)} 条组织成员关系")
                     created_members = 0
-                    
+
                     for membership in org_memberships:
                         try:
                             org_name = membership.get("organization_name")
                             if not org_name:
                                 logger.debug(f"  ⚠️  组织成员关系缺少organization_name，跳过")
                                 continue
-                            
+
                             org_char_result = await db.execute(
                                 select(Character).where(
                                     Character.project_id == request.project_id,
@@ -1091,14 +1136,14 @@ async def generate_character_stream(
                                 )
                             )
                             org_char = org_char_result.scalar_one_or_none()
-                            
+
                             if org_char:
                                 # 获取或创建Organization记录
                                 org_result = await db.execute(
                                     select(Organization).where(Organization.character_id == org_char.id)
                                 )
                                 org = org_result.scalar_one_or_none()
-                                
+
                                 if not org:
                                     # 如果组织Character存在但Organization不存在，自动创建
                                     org = Organization(
@@ -1109,22 +1154,44 @@ async def generate_character_stream(
                                     db.add(org)
                                     await db.flush()
                                     logger.info(f"  ℹ️  自动创建缺失的组织详情：{org_name}")
-                                
-                                # 检查是否已存在成员关系
-                                existing_member = await db.execute(
-                                    select(OrganizationMember).where(
-                                        OrganizationMember.organization_id == org.id,
-                                        OrganizationMember.character_id == character.id
+
+                                # 查找身份（如果提供了identity_name）
+                                identity_id = None
+                                identity_name = membership.get("identity_name")
+                                if identity_name:
+                                    identity_result = await db.execute(
+                                        select(Identity).where(
+                                            Identity.character_id == character.id,
+                                            Identity.name == identity_name
+                                        )
                                     )
+                                    identity = identity_result.scalar_one_or_none()
+                                    if identity:
+                                        identity_id = identity.id
+                                        logger.info(f"  🎭 使用身份加入组织：{identity_name}")
+                                    else:
+                                        logger.warning(f"  ⚠️ 未找到身份：{identity_name}，将使用角色本身加入")
+
+                                # 检查是否已存在成员关系（同一角色-组织-身份组合）
+                                existing_query = select(OrganizationMember).where(
+                                    OrganizationMember.organization_id == org.id,
+                                    OrganizationMember.character_id == character.id
                                 )
+                                if identity_id:
+                                    existing_query = existing_query.where(OrganizationMember.identity_id == identity_id)
+                                else:
+                                    existing_query = existing_query.where(OrganizationMember.identity_id.is_(None))
+
+                                existing_member = await db.execute(existing_query)
                                 if existing_member.scalar_one_or_none():
                                     logger.debug(f"  ℹ️  成员关系已存在：{character.name} -> {org_name}")
                                     continue
-                                
+
                                 # 创建成员关系
                                 member = OrganizationMember(
                                     organization_id=org.id,
                                     character_id=character.id,
+                                    identity_id=identity_id,
                                     position=membership.get("position", "成员"),
                                     rank=membership.get("rank", 0),
                                     loyalty=membership.get("loyalty", 50),
@@ -1133,19 +1200,20 @@ async def generate_character_stream(
                                     source="ai"
                                 )
                                 db.add(member)
-                                
+
                                 # 更新组织成员计数
                                 org.member_count += 1
-                                
+
+                                identity_info = f" (身份: {identity_name})" if identity_name else ""
                                 created_members += 1
-                                logger.info(f"  ✅ 添加成员：{character.name} -> {org_name} ({membership.get('position')})")
+                                logger.info(f"  ✅ 添加成员：{character.name}{identity_info} -> {org_name} ({membership.get('position')})")
                             else:
                                 logger.warning(f"  ⚠️  组织不存在：{org_name}")
-                                
+
                         except Exception as org_error:
                             logger.warning(f"  ❌ 添加组织成员失败：{str(org_error)}")
                             continue
-                    
+
                     logger.info(f"✅ 成功创建 {created_members} 条组织成员记录")
             
             yield await tracker.saving("保存生成历史...", 0.9)

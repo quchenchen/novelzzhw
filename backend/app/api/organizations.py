@@ -222,10 +222,14 @@ async def get_organization_members(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    获取组织的所有成员
-    
+    获取组织的所有成员（包括基于角色和基于身份的）
+
     按职位等级（rank）降序排列
+    如果同一角色以多个身份加入，会聚合显示
     """
+    from app.models.identity import Identity
+    from collections import defaultdict
+
     # 验证组织存在
     org_result = await db.execute(
         select(Organization).where(Organization.id == org_id)
@@ -233,11 +237,11 @@ async def get_organization_members(
     org = org_result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="组织不存在")
-    
+
     # 验证用户权限
     user_id = getattr(request.state, 'user_id', None)
     await verify_project_access(org.project_id, user_id, db)
-    
+
     # 获取成员列表
     result = await db.execute(
         select(OrganizationMember)
@@ -245,20 +249,34 @@ async def get_organization_members(
         .order_by(OrganizationMember.rank.desc(), OrganizationMember.created_at)
     )
     members = result.scalars().all()
-    
-    # 获取成员角色信息
-    member_list = []
+
+    # 按角色聚合成员记录
+    character_members = defaultdict(list)
     for member in members:
+        character_members[member.character_id].append(member)
+
+    # 获取成员角色信息和身份信息
+    member_list = []
+    for character_id, char_members in character_members.items():
+        # 获取角色信息
         char_result = await db.execute(
-            select(Character).where(Character.id == member.character_id)
+            select(Character).where(Character.id == character_id)
         )
         char = char_result.scalar_one_or_none()
-        
-        if char:
+
+        if not char:
+            continue
+
+        # 如果只有一个成员记录且没有身份，直接返回
+        if len(char_members) == 1 and not char_members[0].identity_id:
+            member = char_members[0]
             member_list.append(OrganizationMemberDetailResponse(
                 id=member.id,
                 character_id=member.character_id,
                 character_name=char.name,
+                identity_id=None,
+                identity_name=None,
+                identity_type=None,
                 position=member.position,
                 rank=member.rank,
                 loyalty=member.loyalty,
@@ -268,8 +286,57 @@ async def get_organization_members(
                 left_at=member.left_at,
                 notes=member.notes
             ))
-    
-    logger.info(f"获取组织 {org_id} 的成员列表，共 {len(member_list)} 人")
+        else:
+            # 多个身份：使用最高rank的记录作为主记录，但在notes中注明其他身份
+            char_members_sorted = sorted(char_members, key=lambda m: m.rank, reverse=True)
+            primary_member = char_members_sorted[0]
+
+            # 构建身份名称列表
+            identity_names = []
+            for member in char_members:
+                if member.identity_id:
+                    identity_result = await db.execute(
+                        select(Identity).where(Identity.id == member.identity_id)
+                    )
+                    identity = identity_result.scalar_one_or_none()
+                    if identity:
+                        identity_names.append(identity.name)
+
+            # 获取主身份信息
+            identity_name = None
+            identity_type = None
+            if primary_member.identity_id:
+                identity_result = await db.execute(
+                    select(Identity).where(Identity.id == primary_member.identity_id)
+                )
+                identity = identity_result.scalar_one_or_none()
+                if identity:
+                    identity_name = identity.name
+                    identity_type = identity.identity_type
+
+            # 在备注中添加多身份信息
+            notes = primary_member.notes or ""
+            if len(identity_names) > 1:
+                notes += f"\n[多身份] 该角色以{len(identity_names)}个身份加入本组织：{', '.join(identity_names)}"
+
+            member_list.append(OrganizationMemberDetailResponse(
+                id=primary_member.id,
+                character_id=primary_member.character_id,
+                character_name=char.name,
+                identity_id=primary_member.identity_id,
+                identity_name=identity_name,
+                identity_type=identity_type,
+                position=primary_member.position,
+                rank=primary_member.rank,
+                loyalty=primary_member.loyalty,
+                contribution=primary_member.contribution,
+                status=primary_member.status,
+                joined_at=primary_member.joined_at,
+                left_at=primary_member.left_at,
+                notes=notes
+            ))
+
+    logger.info(f"获取组织 {org_id} 的成员列表，共 {len(member_list)} 人（原始记录 {len(members)} 条）")
     return member_list
 
 
@@ -281,11 +348,14 @@ async def add_organization_member(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    添加角色到组织
-    
-    - 一个角色在同一组织中只能有一个职位
+    添加角色到组织（支持基于角色或基于身份）
+
+    - 如果提供identity_id，则角色的特定身份加入组织
+    - 一个角色的同一身份在同一组织中只能有一个职位
     - 会自动更新组织的成员计数
     """
+    from app.models.identity import Identity
+
     # 验证组织存在
     org_result = await db.execute(
         select(Organization).where(Organization.id == org_id)
@@ -293,11 +363,11 @@ async def add_organization_member(
     org = org_result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="组织不存在")
-    
+
     # 验证用户权限
     user_id = getattr(request.state, 'user_id', None)
     await verify_project_access(org.project_id, user_id, db)
-    
+
     # 验证角色存在
     char_result = await db.execute(
         select(Character).where(Character.id == member.character_id)
@@ -307,19 +377,35 @@ async def add_organization_member(
         raise HTTPException(status_code=404, detail="角色不存在")
     if char.is_organization:
         raise HTTPException(status_code=400, detail="不能将组织添加为成员")
-    
-    # 检查是否已存在
-    existing = await db.execute(
-        select(OrganizationMember).where(
-            and_(
-                OrganizationMember.organization_id == org_id,
-                OrganizationMember.character_id == member.character_id
+
+    # 如果提供了identity_id，验证身份存在且属于该角色
+    if member.identity_id:
+        identity_result = await db.execute(
+            select(Identity).where(
+                Identity.id == member.identity_id,
+                Identity.character_id == member.character_id
             )
         )
+        identity = identity_result.scalar_one_or_none()
+        if not identity:
+            raise HTTPException(status_code=400, detail="身份不存在或不属于该角色")
+
+    # 检查是否已存在（同一角色-组织-身份组合）
+    existing_query = select(OrganizationMember).where(
+        and_(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.character_id == member.character_id
+        )
     )
+    if member.identity_id:
+        existing_query = existing_query.where(OrganizationMember.identity_id == member.identity_id)
+    else:
+        existing_query = existing_query.where(OrganizationMember.identity_id.is_(None))
+
+    existing = await db.execute(existing_query)
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="该角色已在组织中")
-    
+        raise HTTPException(status_code=400, detail="该角色（或该身份）已在组织中")
+
     # 创建成员关系
     db_member = OrganizationMember(
         organization_id=org_id,
@@ -327,14 +413,15 @@ async def add_organization_member(
         source="manual"
     )
     db.add(db_member)
-    
+
     # 更新组织成员计数
     org.member_count += 1
-    
+
     await db.commit()
     await db.refresh(db_member)
-    
-    logger.info(f"添加成员成功：{char.name} 加入组织 {org_id}")
+
+    identity_info = f"（身份：{member.identity_id}）" if member.identity_id else ""
+    logger.info(f"添加成员成功：{char.name}{identity_info} 加入组织 {org_id}")
     return db_member
 
 

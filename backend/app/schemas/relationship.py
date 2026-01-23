@@ -159,6 +159,7 @@ class OrganizationMemberBase(BaseModel):
 class OrganizationMemberCreate(OrganizationMemberBase):
     """创建组织成员的请求模型"""
     character_id: str = Field(..., description="角色ID")
+    identity_id: Optional[str] = Field(None, description="身份ID（可选，用于基于身份加入组织）")
 
 
 class OrganizationMemberUpdate(BaseModel):
@@ -171,6 +172,7 @@ class OrganizationMemberUpdate(BaseModel):
     loyalty: Optional[int] = Field(None, ge=0, le=100)
     contribution: Optional[int] = Field(None, ge=0, le=100)
     notes: Optional[str] = None
+    identity_id: Optional[str] = Field(None, description="身份ID（可选）")
 
 
 class OrganizationMemberResponse(OrganizationMemberBase):
@@ -178,10 +180,11 @@ class OrganizationMemberResponse(OrganizationMemberBase):
     id: str
     organization_id: str
     character_id: str
+    identity_id: Optional[str] = None
     source: str
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -190,6 +193,9 @@ class OrganizationMemberDetailResponse(BaseModel):
     id: str
     character_id: str
     character_name: str
+    identity_id: Optional[str] = None
+    identity_name: Optional[str] = None
+    identity_type: Optional[str] = None
     position: str
     rank: int
     loyalty: int
@@ -198,3 +204,34 @@ class OrganizationMemberDetailResponse(BaseModel):
     joined_at: Optional[str] = None
     left_at: Optional[str] = None
     notes: Optional[str] = None
+
+
+class IdentityOrganizationMemberCreate(BaseModel):
+    """基于身份创建组织成员的请求模型"""
+    identity_id: str = Field(..., description="身份ID")
+    position: str = Field(..., description="职位名称")
+    rank: int = Field(0, description="职位等级")
+    loyalty: int = Field(50, ge=0, le=100, description="忠诚度")
+    status: str = Field("active", description="状态：active/retired/expelled/deceased")
+    joined_at: Optional[str] = Field(None, description="加入时间（故事时间）")
+    notes: Optional[str] = Field(None, description="备注")
+
+
+class IdentityOrganizationMemberResponse(BaseModel):
+    """基于身份的组织成员响应模型"""
+    id: str
+    organization_id: str
+    organization_name: str
+    identity_id: str
+    identity_name: str
+    character_id: str
+    character_name: str
+    identity_type: str  # real/public/secret/disguise
+    is_primary: bool
+    position: str
+    rank: int
+    loyalty: int
+    status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
