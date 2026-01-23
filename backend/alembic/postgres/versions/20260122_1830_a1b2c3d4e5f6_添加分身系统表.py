@@ -38,11 +38,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_identity_type', 'identities', ['identity_type'], unique=False)
-    op.create_index('idx_status', 'identities', ['status'], unique=False)
-    op.create_index('idx_project_id', 'identities', ['project_id'], unique=False)
-    op.create_index('idx_character_id', 'identities', ['character_id'], unique=False)
-    op.create_index('idx_character_identity', 'identities', ['character_id', 'identity_type'], unique=False)
+    op.create_index('idx_identities_type', 'identities', ['identity_type'], unique=False)
+    op.create_index('idx_identities_status', 'identities', ['status'], unique=False)
+    op.create_index('idx_identities_project_id', 'identities', ['project_id'], unique=False)
+    op.create_index('idx_identities_character_id', 'identities', ['character_id'], unique=False)
+    op.create_index('idx_identities_character_type', 'identities', ['character_id', 'identity_type'], unique=False)
 
     # 创建身份职业关联表 (identity_careers)
     op.create_table('identity_careers',
@@ -61,9 +61,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('identity_id', 'career_id', name='uq_identity_career')
     )
-    op.create_index('idx_identity_career_type', 'identity_careers', ['career_type'], unique=False)
-    op.create_index('idx_identity_id', 'identity_careers', ['identity_id'], unique=False)
-    op.create_index('idx_career_id', 'identity_careers', ['career_id'], unique=False)
+    op.create_index('idx_identity_careers_type', 'identity_careers', ['career_type'], unique=False)
+    op.create_index('idx_identity_careers_identity_id', 'identity_careers', ['identity_id'], unique=False)
+    op.create_index('idx_identity_careers_career_id', 'identity_careers', ['career_id'], unique=False)
 
     # 创建身份认知关系表 (identity_knowledge)
     op.create_table('identity_knowledge',
@@ -80,28 +80,28 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('identity_id', 'knower_character_id', name='uq_identity_knower')
     )
-    op.create_index('idx_knowledge_level', 'identity_knowledge', ['knowledge_level'], unique=False)
-    op.create_index('idx_identity_id', 'identity_knowledge', ['identity_id'], unique=False)
-    op.create_index('idx_knower_character_id', 'identity_knowledge', ['knower_character_id'], unique=False)
+    op.create_index('idx_identity_knowledge_level', 'identity_knowledge', ['knowledge_level'], unique=False)
+    op.create_index('idx_identity_knowledge_identity_id', 'identity_knowledge', ['identity_id'], unique=False)
+    op.create_index('idx_identity_knowledge_knower_id', 'identity_knowledge', ['knower_character_id'], unique=False)
 
 
 def downgrade() -> None:
     # 删除身份认知关系表
-    op.drop_index('idx_knower_character_id', table_name='identity_knowledge')
-    op.drop_index('idx_identity_id', table_name='identity_knowledge')
-    op.drop_index('idx_knowledge_level', table_name='identity_knowledge')
+    op.drop_index('idx_identity_knowledge_knower_id', table_name='identity_knowledge')
+    op.drop_index('idx_identity_knowledge_identity_id', table_name='identity_knowledge')
+    op.drop_index('idx_identity_knowledge_level', table_name='identity_knowledge')
     op.drop_table('identity_knowledge')
 
     # 删除身份职业关联表
-    op.drop_index('idx_career_id', table_name='identity_careers')
-    op.drop_index('idx_identity_id', table_name='identity_careers')
-    op.drop_index('idx_identity_career_type', table_name='identity_careers')
+    op.drop_index('idx_identity_careers_career_id', table_name='identity_careers')
+    op.drop_index('idx_identity_careers_identity_id', table_name='identity_careers')
+    op.drop_index('idx_identity_careers_type', table_name='identity_careers')
     op.drop_table('identity_careers')
 
     # 删除身份表
-    op.drop_index('idx_character_identity', table_name='identities')
-    op.drop_index('idx_character_id', table_name='identities')
-    op.drop_index('idx_project_id', table_name='identities')
-    op.drop_index('idx_status', table_name='identities')
-    op.drop_index('idx_identity_type', table_name='identities')
+    op.drop_index('idx_identities_character_type', table_name='identities')
+    op.drop_index('idx_identities_character_id', table_name='identities')
+    op.drop_index('idx_identities_project_id', table_name='identities')
+    op.drop_index('idx_identities_status', table_name='identities')
+    op.drop_index('idx_identities_type', table_name='identities')
     op.drop_table('identities')
