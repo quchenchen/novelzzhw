@@ -1,5 +1,5 @@
 """身份数据模型"""
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Index
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Index, Integer
 from sqlalchemy.sql import func
 from app.database import Base
 import uuid
