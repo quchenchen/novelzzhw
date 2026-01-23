@@ -407,6 +407,7 @@ export default function Identities() {
                             ]}
                           />
                         </div>
+                        </div>
                       </Col>
                     ))}
                   </Row>
