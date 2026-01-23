@@ -1028,6 +1028,37 @@ export default function Characters() {
                 <TextArea rows={2} placeholder="描述角色的背景故事..." />
               </Form.Item>
 
+              {/* 分身设定 */}
+              <Divider style={{ margin: '8px 0' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <UserOutlined style={{ marginRight: 4 }} />
+                  分身设定
+                </Typography.Text>
+              </Divider>
+              <div style={{
+                padding: '12px',
+                background: 'var(--color-bg-base)',
+                borderRadius: '6px',
+                border: '1px dashed var(--color-border)'
+              }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  管理该角色的多个身份（卧底、伪装等）
+                </Typography.Text>
+                <div style={{ marginTop: 8 }}>
+                  <Button
+                    size="small"
+                    icon={<UserOutlined />}
+                    onClick={() => {
+                      setIsEditModalOpen(false);
+                      // 导航到分身设定页面
+                      window.location.href = `/project/${currentProject.id}/identities`;
+                    }}
+                  >
+                    管理分身设定
+                  </Button>
+                </div>
+              </div>
+
               {/* 职业信息 */}
               {(mainCareers.length > 0 || subCareers.length > 0) && (
                 <>

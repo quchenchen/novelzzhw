@@ -740,6 +740,31 @@ export default function Organizations() {
             <Input.TextArea rows={3} placeholder="成员相关的备注信息" />
           </Form.Item>
 
+          {/* 分身设定入口 */}
+          <div style={{
+            padding: '12px',
+            background: 'var(--color-bg-base, #f5f5f5)',
+            borderRadius: '6px',
+            border: '1px dashed var(--color-border-secondary, #d9d9d9)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#666' }}>
+                <UserOutlined style={{ marginRight: 4 }} />
+                该角色的分身设定
+              </span>
+              <Button
+                size="small"
+                icon={<UserOutlined />}
+                onClick={() => {
+                  setIsEditMemberModalOpen(false);
+                  window.location.href = `/project/${projectId}/identities`;
+                }}
+              >
+                管理分身
+              </Button>
+            </div>
+          </div>
+
           <Form.Item>
             <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
               <Button onClick={() => {
