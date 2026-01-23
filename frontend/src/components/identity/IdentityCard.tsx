@@ -1,6 +1,6 @@
 import React from 'react';
-import { Card, Space, Tag, Typography, Popconfirm, Button, Tooltip } from 'antd';
-import { EditOutlined, DeleteOutlined, UserOutlined, CrownOutlined, EyeInvisibleOutlined, MaskOutlined } from '@ant-design/icons';
+import { Card, Space, Tag, Typography, Popconfirm, Tooltip } from 'antd';
+import { EditOutlined, DeleteOutlined, UserOutlined, CrownOutlined, EyeInvisibleOutlined, SafetyOutlined } from '@ant-design/icons';
 import { cardStyles } from '../CardStyles';
 import type { Identity, IdentityType, IdentityStatus } from '../../types/identity';
 
@@ -17,7 +17,7 @@ const identityTypeConfig: Record<IdentityType, { label: string; color: string; i
   real: { label: '真身', color: 'blue', icon: <UserOutlined /> },
   public: { label: '公开', color: 'green', icon: <UserOutlined /> },
   secret: { label: '隐藏', color: 'purple', icon: <EyeInvisibleOutlined /> },
-  disguise: { label: '伪装', color: 'orange', icon: <MaskOutlined /> },
+  disguise: { label: '伪装', color: 'orange', icon: <SafetyOutlined /> },
 };
 
 const statusConfig: Record<IdentityStatus, { label: string; color: string }> = {

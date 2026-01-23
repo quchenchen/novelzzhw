@@ -14,7 +14,6 @@ import {
   Popconfirm,
   Tag,
   Progress,
-  Tooltip,
   Typography,
 } from 'antd';
 import {
@@ -25,7 +24,7 @@ import {
   MedicineBoxOutlined,
 } from '@ant-design/icons';
 import { identityApi } from '../../services/identityApi';
-import type { IdentityCareer, IdentityCareerCreate, IdentityCareerUpdate, Career } from '../../types/identity';
+import type { IdentityCareer, IdentityCareerCreate, IdentityCareerUpdate } from '../../types/identity';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -40,7 +39,6 @@ export const IdentityCareerCard: React.FC<IdentityCareerCardProps> = ({
   onRefresh,
 }) => {
   const [careers, setCareers] = useState<IdentityCareer[]>([]);
-  const [allCareers, setAllCareers] = useState<Career[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCareer, setEditingCareer] = useState<IdentityCareer | null>(null);
@@ -59,25 +57,9 @@ export const IdentityCareerCard: React.FC<IdentityCareerCardProps> = ({
     }
   }, [identityId]);
 
-  const fetchAllCareers = useCallback(async () => {
-    try {
-      // 需要提供项目ID，这里暂时留空，实际使用时从外部传入
-      // const data = await careerApi.getAllCareers(projectId);
-      // setAllCareers(data);
-    } catch {
-      console.error('获取职业列表失败');
-    }
-  }, []);
-
   useEffect(() => {
     fetchCareers();
   }, [fetchCareers]);
-
-  useEffect(() => {
-    if (isModalOpen) {
-      fetchAllCareers();
-    }
-  }, [isModalOpen, fetchAllCareers]);
 
   const handleAdd = useCallback(() => {
     setEditingCareer(null);
@@ -272,21 +254,11 @@ export const IdentityCareerCard: React.FC<IdentityCareerCardProps> = ({
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           {!editingCareer && (
             <Form.Item
-              label="选择职业"
+              label="职业ID"
               name="career_id"
-              rules={[{ required: true, message: '请选择职业' }]}
+              rules={[{ required: true, message: '请输入职业ID' }]}
             >
-              <Select
-                placeholder="选择职业"
-                showSearch
-                optionFilterProp="children"
-              >
-                {allCareers.map(career => (
-                  <Select.Option key={career.id} value={career.id}>
-                    {career.name}（最高{career.max_stage}阶段）
-                  </Select.Option>
-                ))}
-              </Select>
+              <Input placeholder="请输入职业ID" />
             </Form.Item>
           )}
           <Form.Item

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Form, Input, Select, Switch, Space, Button, Row, Col } from 'antd';
-import type { Identity, IdentityCreate, IdentityUpdate, IdentityType, IdentityStatus } from '../../types/identity';
+import type { Identity, IdentityCreate, IdentityUpdate } from '../../types/identity';
 
 const { TextArea } = Input;
 
