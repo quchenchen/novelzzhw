@@ -5,18 +5,15 @@ import {
   Row,
   Col,
   Empty,
-  Divider,
   Typography,
   Space,
   Tabs,
   Card
 } from 'antd';
-import { PlusOutlined, UserOutlined, CrownOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, UserOutlined, CrownOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { identityApi } from '../services/identityApi';
-import { IdentityList } from '../components/identity/IdentityList';
 import { IdentityForm } from '../components/identity/IdentityForm';
-import { IdentityCard } from '../components/identity/IdentityCard';
 import { IdentityCareerCard } from '../components/identity/IdentityCareerCard';
 import { IdentityKnowledgeList } from '../components/identity/IdentityKnowledgeList';
 import type { Identity } from '../types/identity';
