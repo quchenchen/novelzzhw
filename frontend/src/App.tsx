@@ -8,6 +8,7 @@ import ProjectDetail from './pages/ProjectDetail';
 import WorldSetting from './pages/WorldSetting';
 import Outline from './pages/Outline';
 import Characters from './pages/Characters';
+import Identities from './pages/Identities';
 import Careers from './pages/Careers';
 import Relationships from './pages/Relationships';
 import Organizations from './pages/Organizations';
@@ -56,6 +57,7 @@ function App() {
             <Route path="careers" element={<Careers />} />
             <Route path="outline" element={<Outline />} />
             <Route path="characters" element={<Characters />} />
+            <Route path="identities" element={<Identities />} />
             <Route path="relationships" element={<Relationships />} />
             <Route path="organizations" element={<Organizations />} />
             <Route path="chapters" element={<Chapters />} />

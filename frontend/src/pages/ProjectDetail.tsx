@@ -5,6 +5,7 @@ import {
   ArrowLeftOutlined,
   FileTextOutlined,
   TeamOutlined,
+  UserOutlined,
   BookOutlined,
   // ToolOutlined,
   GlobalOutlined,
@@ -117,6 +118,11 @@ export default function ProjectDetail() {
       label: <Link to={`/project/${projectId}/characters`}>角色管理</Link>,
     },
     {
+      key: 'identities',
+      icon: <UserOutlined />,
+      label: <Link to={`/project/${projectId}/identities`}>分身设定</Link>,
+    },
+    {
       key: 'relationships',
       icon: <ApartmentOutlined />,
       label: <Link to={`/project/${projectId}/relationships`}>关系管理</Link>,
@@ -163,6 +169,7 @@ export default function ProjectDetail() {
     const path = location.pathname;
     if (path.includes('/world-setting')) return 'world-setting';
     if (path.includes('/careers')) return 'careers';
+    if (path.includes('/identities')) return 'identities';
     if (path.includes('/relationships')) return 'relationships';
     if (path.includes('/organizations')) return 'organizations';
     if (path.includes('/outline')) return 'outline';
