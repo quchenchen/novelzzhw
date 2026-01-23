@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
   Button,
-  Modal,
   message,
   Row,
   Col,
@@ -109,10 +108,10 @@ export default function Identities() {
         ...values,
       });
       message.success('身份创建成功');
-      setIsFormModalOpen(false);
       await fetchIdentities();
     } catch (error) {
       message.error('创建身份失败');
+      throw error;
     }
   };
 
@@ -121,10 +120,10 @@ export default function Identities() {
     try {
       await identityApi.update(identity.id, values);
       message.success('身份更新成功');
-      setEditingIdentity(null);
       await fetchIdentities();
     } catch (error) {
       message.error('更新身份失败');
+      throw error;
     }
   };
 
@@ -152,7 +151,7 @@ export default function Identities() {
   };
 
   // 打开身份表单
-  const openFormModal = (characterId: string) => {
+  const openFormModal = () => {
     setEditingIdentity(null);
     setIsFormModalOpen(true);
   };
@@ -228,7 +227,7 @@ export default function Identities() {
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
-                    onClick={() => openFormModal(selectedCharacter.id)}
+                    onClick={() => openFormModal()}
                     size="small"
                   >
                     新建身份
@@ -388,7 +387,6 @@ export default function Identities() {
                                 children: (
                                   <IdentityCareerCard
                                     identityId={identity.id}
-                                    characterId={selectedCharacter.id}
                                     onRefresh={fetchIdentities}
                                   />
                                 ),
@@ -421,36 +419,23 @@ export default function Identities() {
       )}
 
       {/* 创建/编辑身份表单 */}
-      <Modal
-        title={editingIdentity ? '编辑身份' : '新建身份'}
+      <IdentityForm
         open={isFormModalOpen}
-        onCancel={() => {
+        onClose={() => {
           setIsFormModalOpen(false);
           setEditingIdentity(null);
         }}
-        footer={null}
-        width={600}
-        centered
-        styles={{
-          body: { paddingTop: 24 },
+        onSubmit={async (values: any) => {
+          if (editingIdentity) {
+            await handleUpdateIdentity(editingIdentity, values);
+          } else {
+            await handleCreateIdentity(selectedCharacter!.id, values);
+          }
+          setIsFormModalOpen(false);
+          setEditingIdentity(null);
         }}
-      >
-        <IdentityForm
-          characterId={selectedCharacter?.id || ''}
-          identity={editingIdentity || undefined}
-          onSubmit={(values) => {
-            if (editingIdentity) {
-              handleUpdateIdentity(editingIdentity, values);
-            } else {
-              handleCreateIdentity(selectedCharacter!.id, values);
-            }
-          }}
-          onCancel={() => {
-            setIsFormModalOpen(false);
-            setEditingIdentity(null);
-          }}
-        />
-      </Modal>
+        identity={editingIdentity || undefined}
+      />
     </div>
   );
 }
