@@ -55,13 +55,13 @@ export default function Identities() {
         charactersData.map(async (char: any) => {
           try {
             const identitiesRes = await fetch(
-            `${import.meta.env.VITE_API_BASE_URL || ''}/api/identities/character/${char.id}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-              },
-            }
-          );
+              `${import.meta.env.VITE_API_BASE_URL || ''}/api/identities/character/${char.id}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                },
+              }
+            );
             const identities = await identitiesRes.json();
             return {
               ...char,
@@ -76,15 +76,15 @@ export default function Identities() {
         })
       );
 
-      // 过滤出有身份的角色
-      const withIdentities = charactersWithIds.filter((c) => c.identities.length > 0);
-      setCharactersWithIdentities(withIdentities);
+      // 保存所有角色（不管有没有身份）
+      setCharactersWithIdentities(charactersWithIds);
 
-      // 默认选择第一个有身份的角色
-      if (withIdentities.length > 0 && !selectedCharacter) {
-        setSelectedCharacter(withIdentities[0]);
-        if (withIdentities[0].identities.length > 0) {
-          setSelectedIdentity(withIdentities[0].identities[0]);
+      // 如果之前没有选中的角色，默认选择第一个角色
+      if (charactersWithIds.length > 0 && !selectedCharacter) {
+        const firstChar = charactersWithIds[0];
+        setSelectedCharacter(firstChar);
+        if (firstChar.identities.length > 0) {
+          setSelectedIdentity(firstChar.identities[0]);
         }
       }
     } catch (error) {
@@ -174,14 +174,14 @@ export default function Identities() {
 
       {charactersWithIdentities.length === 0 ? (
         <Empty
-          description="还没有角色拥有分身设定"
+          description="项目中还没有角色，请先创建角色"
           style={{ marginTop: 60 }}
         />
       ) : (
         <Row gutter={24}>
           {/* 左侧：角色列表 */}
           <Col span={8}>
-            <Card title="拥有分身的角色" bordered={false}>
+            <Card title="所有角色" bordered={false}>
               {charactersWithIdentities.map((char) => (
                 <div
                   key={char.id}
@@ -199,7 +199,7 @@ export default function Identities() {
                     {char.name}
                   </div>
                   <div style={{ fontSize: 12, color: '#999' }}>
-                    {char.identities.length} 个身份
+                    {char.identities.length > 0 ? `${char.identities.length} 个身份` : '暂无分身'}
                   </div>
                 </div>
               ))}
