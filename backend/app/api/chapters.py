@@ -2658,32 +2658,29 @@ async def execute_batch_generation_in_order(
                                     logger.warning(f"⏳ 分析失败，等待 {wait_time} 秒后重试...")
                                     await asyncio.sleep(wait_time)
                                 else:
-                                    # 达到最大重试次数，必须终止整个批量任务
-                                    logger.error(f"❌ 章节分析失败，已达最大重试次数(3次): 第{chapter.chapter_number}章")
-                                    
-                                    # 记录失败信息
-                                    failed_info = {
+                                    # 达到最大重试次数，记录但不终止批量任务
+                                    # 分析失败不应阻止章节内容的生成，继续处理下一章
+                                    logger.warning(f"⚠️ 章节分析失败(已达最大重试次数3次): 第{chapter.chapter_number}章 - {last_analysis_error}")
+                                    logger.info(f"📝 章节内容已生成，继续处理下一章...")
+
+                                    # 记录分析失败信息（不影响任务状态）
+                                    failed_analysis_info = {
                                         'chapter_id': chapter_id,
                                         'chapter_number': chapter.chapter_number,
                                         'title': chapter.title,
                                         'error': f"分析失败(重试3次): {last_analysis_error}",
-                                        'retry_count': 3
+                                        'retry_count': 3,
+                                        'failure_type': 'analysis'  # 标记为分析失败，不是生成失败
                                     }
-                                    
+
                                     async with write_lock:
                                         if task.failed_chapters is None:
                                             task.failed_chapters = []
-                                        task.failed_chapters.append(failed_info)
-                                        
-                                        # 标记任务失败并终止
-                                        task.status = 'failed'
-                                        task.error_message = f"第{chapter.chapter_number}章分析失败(重试3次): {last_analysis_error}"[:500]
-                                        task.completed_at = datetime.now()
-                                        task.current_retry_count = 0
+                                        task.failed_chapters.append(failed_analysis_info)
                                         await db_session.commit()
-                                    
-                                    logger.error(f"🛑 批量生成中断: 第{chapter.chapter_number}章分析失败")
-                                    return  # 立即终止整个批量生成任务
+
+                                    # 跳出分析重试循环，继续处理下一章
+                                    break
                     
                     # 标记成功
                     chapter_success = True
@@ -2732,15 +2729,13 @@ async def execute_batch_generation_in_order(
                             task.current_retry_count = 0
                             await db_session.commit()
                         
-                        # ⚠️ 如果启用了同步分析，任何错误都应该中断任务
-                        # 因为章节生成或分析失败会影响后续章节的职业更新和剧情连贯性
-                        if task.enable_analysis:
-                            logger.error(f"🛑 批量生成中断: 因启用同步分析，任何错误都会中断任务以确保职业信息和剧情连贯性")
-                        else:
-                            logger.error(f"🛑 批量生成终止于第{chapter.chapter_number}章")
-                        
+                        # 章节内容生成失败（与分析失败不同）
+                        # 章节内容生成是关键步骤，失败后应当终止批量任务
+                        # 因为没有内容就无法进行后续章节的上下文构建
+                        logger.error(f"🛑 批量生成终止: 第{chapter.chapter_number}章内容生成失败")
+
                         return
-        
+
         # 全部完成
         async with write_lock:
             task.status = 'completed'
@@ -2748,9 +2743,23 @@ async def execute_batch_generation_in_order(
             task.current_chapter_id = None
             task.current_chapter_number = None
             await db_session.commit()
-        
-        logger.info(f"✅ 批量生成任务全部完成: {batch_id}, 成功生成 {task.completed_chapters} 章")
-        
+
+        # 统计失败情况
+        failed_count = len(task.failed_chapters) if task.failed_chapters else 0
+        analysis_failures = []
+        if task.failed_chapters:
+            analysis_failures = [f for f in task.failed_chapters if f.get('failure_type') == 'analysis']
+
+        if failed_count > 0:
+            logger.info(f"✅ 批量生成任务完成: {batch_id}")
+            logger.info(f"   📊 成功生成: {task.completed_chapters}/{task.total_chapters} 章")
+            if analysis_failures:
+                logger.warning(f"   ⚠️ 分析失败: {len(analysis_failures)} 章 (内容已生成)")
+                for af in analysis_failures:
+                    logger.warning(f"      - 第{af.get('chapter_number')}章: {af.get('error', '未知')[:50]}...")
+        else:
+            logger.info(f"✅ 批量生成任务全部完成: {batch_id}, 成功生成 {task.completed_chapters} 章")
+
     except Exception as e:
         logger.error(f"❌ 批量生成任务异常: {str(e)}", exc_info=True)
         if db_session and task:
@@ -2960,7 +2969,8 @@ async def generate_single_chapter_for_batch(
             previous_chapter_summary=final_prev_summary,
             # P2 参考参数（动态裁剪后的）
             story_skeleton=chapter_context.story_skeleton or '',
-            relevant_memories=chapter_context.relevant_memories or ''
+            relevant_memories=chapter_context.relevant_memories or '',
+            character_identities=chapter_context.character_identities or '暂无特殊身份信息'
         )
     else:
         # 第一章，使用无前置内容模板
@@ -2976,7 +2986,9 @@ async def generate_single_chapter_for_batch(
             # P1 重要参数
             genre=project.genre or '未设定',
             narrative_perspective=project.narrative_perspective or '第三人称',
-            characters_info=characters_info or '暂无角色信息'
+            characters_info=characters_info or '暂无角色信息',
+            # P2 参考参数
+            character_identities=chapter_context.character_identities or '暂无特殊身份信息'
         )
     
     # 应用写作风格
