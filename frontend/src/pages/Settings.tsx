@@ -274,6 +274,9 @@ export default function SettingsPage() {
     { value: 'openai', label: 'OpenAI Compatible', defaultUrl: 'https://api.openai.com/v1' },
     // { value: 'anthropic', label: 'Anthropic (Claude)', defaultUrl: 'https://api.anthropic.com' },
     { value: 'gemini', label: 'Google Gemini', defaultUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+    { value: 'volcano', label: '火山引擎 (Volcano Engine)', defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { value: 'aliyun', label: '阿里云百炼 (Aliyun Bailian)', defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    { value: 'siliconflow', label: 'SiliconFlow', defaultUrl: 'https://api.siliconflow.cn/v1' },
   ];
 
   const handleProviderChange = (value: string) => {
@@ -772,6 +775,12 @@ export default function SettingsPage() {
       //   return 'purple';
       case 'gemini':
         return 'green';
+      case 'volcano':
+        return 'orange';
+      case 'aliyun':
+        return 'cyan';
+      case 'siliconflow':
+        return 'purple';
       default:
         return 'default';
     }
@@ -1538,6 +1547,9 @@ export default function SettingsPage() {
                   <Select placeholder="选择提供商" onChange={handlePresetProviderChange}>
                     <Select.Option value="openai">OpenAI</Select.Option>
                     <Select.Option value="gemini">Google Gemini</Select.Option>
+                    <Select.Option value="volcano">火山引擎</Select.Option>
+                    <Select.Option value="aliyun">阿里云百炼</Select.Option>
+                    <Select.Option value="siliconflow">SiliconFlow</Select.Option>
                   </Select>
                 </Form.Item>
               </Col>

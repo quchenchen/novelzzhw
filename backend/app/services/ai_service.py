@@ -95,25 +95,47 @@ class AIService:
         self._openai_provider: Optional[OpenAIProvider] = None
         self._anthropic_provider: Optional[AnthropicProvider] = None
         self._gemini_provider: Optional[GeminiProvider] = None
-        
+        # OpenAI兼容的提供商（火山引擎、阿里云百炼、SiliconFlow等）
+        self._volcano_provider: Optional[OpenAIProvider] = None
+        self._aliyun_provider: Optional[OpenAIProvider] = None
+        self._siliconflow_provider: Optional[OpenAIProvider] = None
+
         # 初始化 OpenAI
         openai_key = api_key if api_provider == "openai" else app_settings.openai_api_key
         if openai_key:
             base_url = api_base_url if api_provider == "openai" else app_settings.openai_base_url
             client = OpenAIClient(openai_key, base_url or "https://api.openai.com/v1", self.config)
             self._openai_provider = OpenAIProvider(client)
-        
+
         # 初始化 Anthropic
         anthropic_key = api_key if api_provider == "anthropic" else app_settings.anthropic_api_key
         if anthropic_key:
             base_url = api_base_url if api_provider == "anthropic" else app_settings.anthropic_base_url
             client = AnthropicClient(anthropic_key, base_url, self.config)
             self._anthropic_provider = AnthropicProvider(client)
-        
+
         # 初始化 Gemini
         if api_provider == "gemini" and api_key:
             client = GeminiClient(api_key, api_base_url, self.config)
             self._gemini_provider = GeminiProvider(client)
+
+        # 初始化火山引擎（使用OpenAI兼容接口）
+        if api_provider == "volcano" and api_key:
+            base_url = api_base_url or "https://ark.cn-beijing.volces.com/api/v3"
+            client = OpenAIClient(api_key, base_url, self.config)
+            self._volcano_provider = OpenAIProvider(client)
+
+        # 初始化阿里云百炼（使用OpenAI兼容接口）
+        if api_provider == "aliyun" and api_key:
+            base_url = api_base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            client = OpenAIClient(api_key, base_url, self.config)
+            self._aliyun_provider = OpenAIProvider(client)
+
+        # 初始化 SiliconFlow（使用OpenAI兼容接口）
+        if api_provider == "siliconflow" and api_key:
+            base_url = api_base_url or "https://api.siliconflow.cn/v1"
+            client = OpenAIClient(api_key, base_url, self.config)
+            self._siliconflow_provider = OpenAIProvider(client)
 
     @property
     def enable_mcp(self) -> bool:
@@ -154,6 +176,13 @@ class AIService:
             return self._anthropic_provider
         if p == "gemini" and self._gemini_provider:
             return self._gemini_provider
+        # OpenAI兼容的提供商
+        if p == "volcano" and self._volcano_provider:
+            return self._volcano_provider
+        if p == "aliyun" and self._aliyun_provider:
+            return self._aliyun_provider
+        if p == "siliconflow" and self._siliconflow_provider:
+            return self._siliconflow_provider
         raise ValueError(f"Provider {p} 未初始化")
 
     async def _prepare_mcp_tools(self, auto_mcp: bool = True, force_refresh: bool = False) -> Optional[List[Dict]]:

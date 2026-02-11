@@ -972,3 +972,32 @@ export const PROMPT_CATEGORIES: Record<string, string> = {
   game: '游戏/电竞',
   other: '其他',
 };
+
+// API提供商配置
+export const API_PROVIDERS: Record<string, { label: string; defaultUrl: string; description?: string }> = {
+  openai: {
+    label: 'OpenAI Compatible',
+    defaultUrl: 'https://api.openai.com/v1',
+    description: '支持OpenAI及兼容接口的服务',
+  },
+  gemini: {
+    label: 'Google Gemini',
+    defaultUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    description: 'Google Gemini API',
+  },
+  volcano: {
+    label: '火山引擎 (Volcano Engine)',
+    defaultUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    description: '字节跳动火山引擎，支持豆包等模型',
+  },
+  aliyun: {
+    label: '阿里云百炼 (Aliyun Bailian)',
+    defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    description: '阿里云百炼平台，支持通义千问等模型',
+  },
+  siliconflow: {
+    label: 'SiliconFlow',
+    defaultUrl: 'https://api.siliconflow.cn/v1',
+    description: 'SiliconFlow平台，支持多种开源模型',
+  },
+};

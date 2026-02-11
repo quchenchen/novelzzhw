@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     gemini_base_url: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     anthropic_base_url: Optional[str] = None
+    # 火山引擎配置
+    volcano_api_key: Optional[str] = None
+    volcano_base_url: Optional[str] = "https://ark.cn-beijing.volces.com/api/v3"
+    # 阿里云百炼配置
+    aliyun_api_key: Optional[str] = None
+    aliyun_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # SiliconFlow配置
+    siliconflow_api_key: Optional[str] = None
+    siliconflow_base_url: Optional[str] = "https://api.siliconflow.cn/v1"
     default_ai_provider: str = "openai"
     default_model: str = "gpt-4"
     default_temperature: float = 0.7

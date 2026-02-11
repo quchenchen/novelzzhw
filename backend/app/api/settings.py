@@ -29,12 +29,50 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/settings", tags=["设置管理"])
 
 
+def _get_common_models_for_provider(provider: str) -> list[str]:
+    """获取OpenAI兼容提供商的常见模型列表"""
+    models_map = {
+        "volcano": [
+            "ep-20241105154800-wzccq",  # 火山引擎示例模型
+            "doubao-pro-4k",
+            "doubao-pro-32k",
+            "doubao-lite-4k",
+        ],
+        "aliyun": [
+            "qwen-turbo",
+            "qwen-plus",
+            "qwen-max",
+            "qwen-long",
+            "qwen-vl-plus",
+        ],
+        "siliconflow": [
+            "Qwen/Qwen2.5-7B-Instruct",
+            "deepseek-ai/DeepSeek-V2.5",
+            "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "01-ai/Yi-1.5-9B-Chat",
+        ],
+    }
+    return models_map.get(provider, [])
+
+
 def read_env_defaults() -> Dict[str, Any]:
     """从.env文件读取默认配置（仅读取，不修改）"""
     return {
         "api_provider": app_settings.default_ai_provider,
-        "api_key": app_settings.openai_api_key or app_settings.anthropic_api_key or "",
-        "api_base_url": app_settings.openai_base_url or app_settings.anthropic_base_url or "",
+        "api_key": (
+            app_settings.openai_api_key or
+            app_settings.anthropic_api_key or
+            app_settings.volcano_api_key or
+            app_settings.aliyun_api_key or
+            app_settings.siliconflow_api_key or ""
+        ),
+        "api_base_url": (
+            app_settings.openai_base_url or
+            app_settings.anthropic_base_url or
+            app_settings.volcano_base_url or
+            app_settings.aliyun_base_url or
+            app_settings.siliconflow_base_url or ""
+        ),
         "llm_model": app_settings.default_model,
         "temperature": app_settings.default_temperature,
         "max_tokens": app_settings.default_max_tokens,
@@ -350,7 +388,45 @@ async def get_available_models(
                         mid = m.get("name", "").replace("models/", "")
                         models.append({"value": mid, "label": m.get("displayName", mid), "description": ""})
                 return {"provider": provider, "models": models, "count": len(models)}
-            
+
+            # OpenAI兼容的提供商（火山引擎、阿里云百炼、SiliconFlow）
+            elif provider in ("volcano", "aliyun", "siliconflow"):
+                # 使用OpenAI兼容接口获取模型列表
+                url = f"{api_base_url.rstrip('/')}/models"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+
+                logger.info(f"正在从 {url} 获取 {provider} 模型列表")
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+
+                data = response.json()
+                models = []
+
+                if "data" in data and isinstance(data["data"], list):
+                    for model in data["data"]:
+                        model_id = model.get("id", "")
+                        if model_id:
+                            models.append({
+                                "value": model_id,
+                                "label": model_id,
+                                "description": model.get("description", "") or f"Created: {model.get('created', 'N/A')}"
+                            })
+
+                if not models:
+                    # 如果API没有返回模型列表，返回常见模型建议
+                    common_models = _get_common_models_for_provider(provider)
+                    models = [{"value": m, "label": m, "description": "请确认模型名称"} for m in common_models]
+                    logger.info(f"未获取到模型列表，返回 {provider} 常见模型建议")
+
+                return {
+                    "provider": provider,
+                    "models": models,
+                    "count": len(models)
+                }
+
             else:
                 raise HTTPException(status_code=400, detail=f"不支持的提供商: {provider}")
             
