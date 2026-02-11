@@ -1,5 +1,10 @@
 # 多阶段构建 Dockerfile for AI Story Creator
 # 支持多架构构建: linux/amd64, linux/arm64
+#
+# Python 版本说明:
+# - Python 3.12 是当前稳定版本，提供最佳性能和兼容性
+# - Python 3.10+ 是 MCP (Model Context Protocol) SDK 的最低要求
+# - 如需降级到 Python 3.8，需注释掉 requirements.txt 中的 mcp 包
 
 # 构建参数
 ARG USE_CN_MIRROR=false
@@ -35,7 +40,9 @@ RUN sed -i "s|outDir: '../backend/static'|outDir: 'dist'|g" vite.config.ts
 RUN npm run build
 
 # 阶段2: 构建最终镜像
-FROM python:3.11-slim
+# 使用 Python 3.12 以获得最佳性能和兼容性
+# Python 3.10+ 是 MCP (Model Context Protocol) 的最低要求
+FROM python:3.12-slim
 
 ARG USE_CN_MIRROR
 ARG TARGETPLATFORM
