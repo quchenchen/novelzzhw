@@ -46,7 +46,7 @@ class SessionManager {
     // 定期检查会话状态
     this.checkInterval = setInterval(() => {
       this.checkSession();
-    }, this.CHECK_INTERVAL);
+    }, this.CHECK_INTERVAL) as unknown as number;
     
     // 监听用户活动
     this.setupActivityListeners();
@@ -221,7 +221,7 @@ class SessionManager {
     
     this.activityTimeout = setTimeout(() => {
       // 用户已超过30分钟无活动
-    }, this.ACTIVITY_TIMEOUT);
+    }, this.ACTIVITY_TIMEOUT) as unknown as number;
   };
 
   /**
