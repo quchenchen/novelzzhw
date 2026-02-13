@@ -208,11 +208,19 @@ export default function Login() {
     // 设置今日不再显示
     const today = new Date().toDateString();
     localStorage.setItem('announcement_hide_today', today);
+    // 关闭弹窗并跳转
+    setShowAnnouncement(false);
+    const redirect = searchParams.get('redirect') || '/';
+    navigate(redirect);
   };
 
   const handleNeverShow = () => {
     // 设置永久不再显示
     localStorage.setItem('announcement_hide_forever', 'true');
+    // 关闭弹窗并跳转
+    setShowAnnouncement(false);
+    const redirect = searchParams.get('redirect') || '/';
+    navigate(redirect);
   };
 
   return (
