@@ -435,11 +435,11 @@ async def career_system_generator(
                         try:
                             stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
                             attribute_bonuses = career_info.get("attribute_bonuses")
-                            # 处理attribute_bonuses：如果是列表则转换为空对象，否则直接序列化
+                            # 处理attribute_bonuses：如果是列表则转换为逗号分隔的字符串
                             if attribute_bonuses:
                                 if isinstance(attribute_bonuses, list):
-                                    # AI返回的是数组，将其转换为空对象或第一个元素的字符串形式
-                                    attribute_bonuses_json = json.dumps({}, ensure_ascii=False)
+                                    # AI返回的是数组，转换为逗号分隔的字符串
+                                    attribute_bonuses_json = ",".join(attribute_bonuses)
                                 else:
                                     attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False)
                             else:
@@ -473,11 +473,11 @@ async def career_system_generator(
                         try:
                             stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
                             attribute_bonuses = career_info.get("attribute_bonuses")
-                            # 处理attribute_bonuses：如果是列表则转换为空对象，否则直接序列化
+                            # 处理attribute_bonuses：如果是列表则转换为逗号分隔的字符串
                             if attribute_bonuses:
                                 if isinstance(attribute_bonuses, list):
-                                    # AI返回的是数组，将其转换为空对象
-                                    attribute_bonuses_json = json.dumps({}, ensure_ascii=False)
+                                    # AI返回的是数组，转换为逗号分隔的字符串
+                                    attribute_bonuses_json = ",".join(attribute_bonuses)
                                 else:
                                     attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False)
                             else:
