@@ -435,8 +435,16 @@ async def career_system_generator(
                         try:
                             stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
                             attribute_bonuses = career_info.get("attribute_bonuses")
-                            attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False) if attribute_bonuses else None
-                            
+                            # 处理attribute_bonuses：如果是列表则转换为空对象，否则直接序列化
+                            if attribute_bonuses:
+                                if isinstance(attribute_bonuses, list):
+                                    # AI返回的是数组，将其转换为空对象或第一个元素的字符串形式
+                                    attribute_bonuses_json = json.dumps({}, ensure_ascii=False)
+                                else:
+                                    attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False)
+                            else:
+                                attribute_bonuses_json = None
+
                             career = Career(
                                 project_id=project.id,
                                 name=career_info.get("name", f"未命名主职业{idx+1}"),
@@ -465,8 +473,16 @@ async def career_system_generator(
                         try:
                             stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
                             attribute_bonuses = career_info.get("attribute_bonuses")
-                            attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False) if attribute_bonuses else None
-                            
+                            # 处理attribute_bonuses：如果是列表则转换为空对象，否则直接序列化
+                            if attribute_bonuses:
+                                if isinstance(attribute_bonuses, list):
+                                    # AI返回的是数组，将其转换为空对象
+                                    attribute_bonuses_json = json.dumps({}, ensure_ascii=False)
+                                else:
+                                    attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False)
+                            else:
+                                attribute_bonuses_json = None
+
                             career = Career(
                                 project_id=project.id,
                                 name=career_info.get("name", f"未命名副职业{idx+1}"),
