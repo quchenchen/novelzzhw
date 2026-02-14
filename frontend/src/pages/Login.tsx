@@ -3,7 +3,6 @@ import { Button, Card, Space, Typography, message, Spin, Form, Input, Tabs } fro
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { authApi } from '../services/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import AnnouncementModal from '../components/AnnouncementModal';
 
 const { Title, Paragraph } = Typography;
 
@@ -15,7 +14,6 @@ export default function Login() {
   const [localAuthEnabled, setLocalAuthEnabled] = useState(false);
   const [linuxdoEnabled, setLinuxdoEnabled] = useState(false);
   const [form] = Form.useForm();
-  const [showAnnouncement, setShowAnnouncement] = useState(false);
 
   // 检查是否已登录和获取认证配置
   useEffect(() => {
@@ -49,19 +47,8 @@ export default function Login() {
 
       if (response.success) {
         message.success('登录成功！');
-
-        // 检查是否永久隐藏公告
-        const hideForever = localStorage.getItem('announcement_hide_forever');
-        const hideToday = localStorage.getItem('announcement_hide_today');
-        const today = new Date().toDateString();
-
-        // 如果永久隐藏或今日已隐藏，则不显示公告
-        if (hideForever === 'true' || hideToday === today) {
-          const redirect = searchParams.get('redirect') || '/';
-          navigate(redirect);
-        } else {
-          setShowAnnouncement(true);
-        }
+        const redirect = searchParams.get('redirect') || '/';
+        navigate(redirect);
       }
     } catch (error) {
       console.error('本地登录失败:', error);
@@ -198,39 +185,8 @@ export default function Login() {
     </div>
   );
 
-  const handleAnnouncementClose = () => {
-    setShowAnnouncement(false);
-    const redirect = searchParams.get('redirect') || '/';
-    navigate(redirect);
-  };
-
-  const handleDoNotShowToday = () => {
-    // 设置今日不再显示
-    const today = new Date().toDateString();
-    localStorage.setItem('announcement_hide_today', today);
-    // 关闭弹窗并跳转
-    setShowAnnouncement(false);
-    const redirect = searchParams.get('redirect') || '/';
-    navigate(redirect);
-  };
-
-  const handleNeverShow = () => {
-    // 设置永久不再显示
-    localStorage.setItem('announcement_hide_forever', 'true');
-    // 关闭弹窗并跳转
-    setShowAnnouncement(false);
-    const redirect = searchParams.get('redirect') || '/';
-    navigate(redirect);
-  };
-
   return (
     <>
-      <AnnouncementModal
-        visible={showAnnouncement}
-        onClose={handleAnnouncementClose}
-        onDoNotShowToday={handleDoNotShowToday}
-        onNeverShow={handleNeverShow}
-      />
       <div style={{
         display: 'flex',
         justifyContent: 'center',
