@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Typography, Space, Divider, Badge, Grid } from 'antd';
-import { GithubOutlined, CopyrightOutlined, HeartFilled, ClockCircleOutlined } from '@ant-design/icons';
+import { GithubOutlined, CopyrightOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { VERSION_INFO, getVersionString } from '../config/version';
 import { checkLatestVersion } from '../services/versionService';
 
@@ -223,22 +223,6 @@ export default function AppFooter({ sidebarWidth = 0 }: AppFooterProps) {
             >
               <ClockCircleOutlined style={{ fontSize: 12 }} />
               <span>{VERSION_INFO.buildTime}</span>
-            </Text>
-
-            {/* 致谢信息 */}
-            <Text
-              style={{
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                color: 'var(--color-text-secondary)',
-                textShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-              }}
-            >
-              <span>Made with</span>
-              <HeartFilled style={{ color: 'var(--color-error)', fontSize: 11 }} />
-              <span>by {VERSION_INFO.author}</span>
             </Text>
           </Space>
         )}
