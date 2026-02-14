@@ -126,9 +126,10 @@ export default function Foreshadows() {
   const loadStats = useCallback(async () => {
     if (!projectId) return;
     try {
-      // 获取当前最大章节号
-      const maxChapter = chapters.length > 0 
-        ? Math.max(...chapters.map(c => c.chapter_number))
+      // 获取当前最大章节号（只计算有内容的章节，与表格显示逻辑保持一致）
+      const chaptersWithContent = chapters.filter(c => c.content);
+      const maxChapter = chaptersWithContent.length > 0
+        ? Math.max(...chaptersWithContent.map(c => c.chapter_number))
         : undefined;
       const statsData = await foreshadowApi.getForeshadowStats(projectId, maxChapter);
       setStats(statsData);

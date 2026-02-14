@@ -20,6 +20,7 @@ from app.models.project import Project
 from app.models.outline import Outline
 from app.models.character import Character
 from app.models.career import Career, CharacterCareer
+from app.models.relationship import CharacterRelationship, Organization, OrganizationMember
 from app.models.generation_history import GenerationHistory
 from app.models.writing_style import WritingStyle
 from app.models.analysis_task import AnalysisTask
@@ -476,199 +477,6 @@ async def check_prerequisites(db: AsyncSession, chapter: Chapter) -> tuple[bool,
     return True, "", previous_chapters
 
 
-async def build_smart_chapter_context(
-    db: AsyncSession,
-    project_id: str,
-    current_chapter_number: int,
-    user_id: str
-) -> dict:
-    """
-    智能构建章节生成上下文（支持海量章节场景）
-    
-    策略：
-    1. 故事骨架：每50章采样1章（标题+摘要）
-    2. 相关历史：通过chapter_summary记忆语义检索15个最相关章节
-    3. 近期概要：最近30章的简要摘要（200字/章）
-    4. 最近完整：最近3章的完整内容
-    
-    Args:
-        db: 数据库会话
-        project_id: 项目ID
-        current_chapter_number: 当前章节序号
-        user_id: 用户ID
-        
-    Returns:
-        包含各部分上下文的字典
-    """
-    context_parts = {
-        'story_skeleton': '',      # 故事骨架
-        'relevant_history': '',    # 相关历史章节
-        'recent_summary': '',      # 近期概要
-        'recent_full': '',         # 最近完整内容
-        'stats': {}                # 统计信息
-    }
-    
-    try:
-        # 1. 获取所有已完成的前置章节（只取ID和序号）
-        all_chapters_result = await db.execute(
-            select(Chapter.id, Chapter.chapter_number, Chapter.title)
-            .where(Chapter.project_id == project_id)
-            .where(Chapter.chapter_number < current_chapter_number)
-            .where(Chapter.content != None)
-            .where(Chapter.content != "")
-            .order_by(Chapter.chapter_number)
-        )
-
-        all_chapters_info = all_chapters_result.all()
-        total_previous = len(all_chapters_info)
-        
-        if total_previous == 0:
-            logger.info("📚 这是第一章，无需构建前置上下文")
-            return context_parts
-        
-        logger.info(f"📚 开始构建智能上下文：共{total_previous}章前置内容")
-        
-        # 2. 构建故事骨架（每50章采样）
-        skeleton_chapters = []
-        if total_previous > 50:
-            sample_interval = 50
-            skeleton_indices = list(range(0, total_previous, sample_interval))
-            
-            for idx in skeleton_indices:
-                chapter_info = all_chapters_info[idx]
-                # 获取章节摘要（优先从chapter_summary记忆获取）
-                summary_result = await db.execute(
-                    select(StoryMemory.content)
-                    .where(StoryMemory.project_id == project_id)
-                    .where(StoryMemory.chapter_id == chapter_info.id)
-                    .where(StoryMemory.memory_type == 'chapter_summary')
-                    .limit(1)
-                )
-                summary_row = summary_result.scalar_one_or_none()
-                summary = summary_row if summary_row else "（无摘要）"
-                
-                skeleton_chapters.append({
-                    'number': chapter_info.chapter_number,
-                    'title': chapter_info.title,
-                    'summary': summary
-                })
-            
-            context_parts['story_skeleton'] = "【故事骨架】\n" + "\n".join([
-                f"第{ch['number']}章《{ch['title']}》：{ch['summary']}"
-                for ch in skeleton_chapters
-            ])
-            logger.info(f"  ✅ 故事骨架：采样{len(skeleton_chapters)}章（每50章1个）")
-        
-        # 3. 语义检索相关历史章节（使用chapter_summary记忆）
-        # 获取当前章节的大纲作为查询
-        current_outline_result = await db.execute(
-            select(Outline.content)
-            .where(Outline.project_id == project_id)
-            .where(Outline.order_index == current_chapter_number)
-        )
-        current_outline = current_outline_result.scalar_one_or_none()
-        
-        if current_outline and total_previous > 3:
-            # 使用记忆服务进行语义检索
-            relevant_memories = await memory_service.search_memories(
-                user_id=user_id,
-                project_id=project_id,
-                query=current_outline,
-                memory_types=['chapter_summary'],
-                limit=15,  # 检索15个最相关的章节
-                min_importance=0.0  # 不过滤重要性，依赖语义相关度
-            )
-            
-            if relevant_memories:
-                relevant_chapters_text = []
-                for mem in relevant_memories:
-                    # 获取章节信息
-                    chapter_result = await db.execute(
-                        select(Chapter.chapter_number, Chapter.title)
-                        .where(Chapter.id == mem['metadata'].get('chapter_id'))
-                    )
-                    chapter_info = chapter_result.first()
-                    if chapter_info:
-                        relevant_chapters_text.append(
-                            f"第{chapter_info.chapter_number}章《{chapter_info.title}》：{mem['content']} "
-                            f"(相关度:{mem['similarity']:.2f})"
-                        )
-                
-                context_parts['relevant_history'] = "【相关历史章节】\n" + "\n".join(relevant_chapters_text)
-                logger.info(f"  ✅ 相关历史：语义检索到{len(relevant_chapters_text)}章")
-        
-        # 4. 近期概要（最近30章，每章200字摘要）
-        recent_summary_count = min(30, total_previous)
-        recent_for_summary = all_chapters_info[-recent_summary_count:] if total_previous > 3 else []
-        
-        if recent_for_summary and len(recent_for_summary) > 3:  # 至少要有3章才做摘要
-            recent_summaries = []
-            for chapter_info in recent_for_summary[:-3]:  # 排除最后3章（它们会完整展示）
-                # 优先获取chapter_summary记忆
-                summary_result = await db.execute(
-                    select(StoryMemory.content)
-                    .where(StoryMemory.project_id == project_id)
-                    .where(StoryMemory.chapter_id == chapter_info.id)
-                    .where(StoryMemory.memory_type == 'chapter_summary')
-                    .limit(1)
-                )
-                summary = summary_result.scalar_one_or_none()
-                
-                if summary:
-                    recent_summaries.append(
-                        f"第{chapter_info.chapter_number}章《{chapter_info.title}》：{summary}"
-                    )
-            
-            if recent_summaries:
-                context_parts['recent_summary'] = "【近期章节概要】\n" + "\n".join(recent_summaries)
-                logger.info(f"  ✅ 近期概要：{len(recent_summaries)}章摘要")
-        
-        # 5. 最近完整内容（最近3章）
-        recent_full_count = min(3, total_previous)
-        recent_full_chapters = all_chapters_info[-recent_full_count:]
-        
-        # 获取完整内容
-        recent_full_texts = []
-        for chapter_info in recent_full_chapters:
-            chapter_result = await db.execute(
-                select(Chapter.content)
-                .where(Chapter.id == chapter_info.id)
-            )
-            content = chapter_result.scalar_one_or_none()
-            if content:
-                recent_full_texts.append(
-                    f"=== 第{chapter_info.chapter_number}章：{chapter_info.title} ===\n{content}"
-                )
-        
-        context_parts['recent_full'] = "【最近章节完整内容】\n" + "\n\n".join(recent_full_texts)
-        logger.info(f"  ✅ 最近完整：{len(recent_full_texts)}章全文")
-        
-        # 6. 统计信息
-        context_parts['stats'] = {
-            'total_previous': total_previous,
-            'skeleton_samples': len(skeleton_chapters),
-            'relevant_history': len(relevant_memories) if current_outline and total_previous > 3 else 0,
-            'recent_summaries': len(recent_summaries) if recent_for_summary and len(recent_for_summary) > 3 else 0,
-            'recent_full': len(recent_full_texts)
-        }
-        
-        # 计算总长度
-        total_length = sum([
-            len(context_parts['story_skeleton']),
-            len(context_parts['relevant_history']),
-            len(context_parts['recent_summary']),
-            len(context_parts['recent_full'])
-        ])
-        context_parts['stats']['total_length'] = total_length
-        
-        logger.info(f"📊 智能上下文构建完成：总长度 {total_length} 字符")
-        
-    except Exception as e:
-        logger.error(f"❌ 构建智能上下文失败: {str(e)}", exc_info=True)
-    
-    return context_parts
-
-
 async def build_characters_info_with_careers(
     db: AsyncSession,
     project_id: str,
@@ -710,11 +518,75 @@ async def build_characters_info_with_careers(
     character_ids = [c.id for c in characters]
     if not character_ids:
         return '暂无角色信息'
+    
+    # 构建全局角色名称映射（用于关系显示）
+    all_chars_result = await db.execute(
+        select(Character.id, Character.name).where(Character.project_id == project_id)
+    )
+    all_char_name_map = {row.id: row.name for row in all_chars_result.all()}
         
     character_careers_result = await db.execute(
         select(CharacterCareer).where(CharacterCareer.character_id.in_(character_ids))
     )
     character_careers = character_careers_result.scalars().all()
+    
+    # 获取所有角色的关系（一次性查询）
+    from sqlalchemy import or_
+    rels_result = await db.execute(
+        select(CharacterRelationship).where(
+            CharacterRelationship.project_id == project_id,
+            or_(
+                CharacterRelationship.character_from_id.in_(character_ids),
+                CharacterRelationship.character_to_id.in_(character_ids)
+            )
+        )
+    )
+    all_relationships = rels_result.scalars().all()
+    
+    # 按角色ID分组关系
+    char_rels_map: dict[str, list] = {cid: [] for cid in character_ids}
+    for r in all_relationships:
+        if r.character_from_id in char_rels_map:
+            char_rels_map[r.character_from_id].append(r)
+        if r.character_to_id in char_rels_map:
+            char_rels_map[r.character_to_id].append(r)
+    
+    # 获取所有组织及其成员关系（一次性查询）
+    orgs_result = await db.execute(
+        select(Organization).where(Organization.project_id == project_id)
+    )
+    all_orgs = orgs_result.scalars().all()
+    
+    # 构建组织ID到组织名称的映射（通过关联的Character记录）
+    org_name_map = {}  # org_id -> org_name
+    char_id_to_org = {}  # character_id -> Organization（用于组织实体补充详情）
+    for org in all_orgs:
+        org_name_map[org.id] = all_char_name_map.get(org.character_id, '未知组织')
+        char_id_to_org[org.character_id] = org
+    
+    # 获取所有组织的成员关系（一次性查询）
+    org_ids = [org.id for org in all_orgs]
+    all_org_members = []
+    if org_ids:
+        all_org_members_result = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id.in_(org_ids)
+            )
+        )
+        all_org_members = all_org_members_result.scalars().all()
+    
+    # 按组织ID分组成员（用于组织实体显示成员列表）
+    org_members_map: dict[str, list] = {oid: [] for oid in org_ids}
+    for m in all_org_members:
+        if m.organization_id in org_members_map:
+            org_members_map[m.organization_id].append(m)
+    
+    # 获取涉及当前非组织角色的成员关系
+    non_org_char_ids = [c.id for c in characters if not c.is_organization]
+    char_org_map: dict[str, list] = {cid: [] for cid in non_org_char_ids}
+    for m in all_org_members:
+        if m.character_id in char_org_map:
+            char_org_map[m.character_id].append(m)
     
     # 构建角色ID到职业信息的映射
     char_career_map = {}
@@ -741,9 +613,52 @@ async def build_characters_info_with_careers(
     # 构建角色信息字符串
     characters_info_parts = []
     for c in characters:
-        # 基本信息
+        # 基本信息（含存活状态标记）
         entity_type = '组织' if c.is_organization else '角色'
-        base_info = f"- {c.name}({entity_type}, {c.role_type})"
+        status_marker = ""
+        char_status = getattr(c, 'status', None) or 'active'
+        if char_status != 'active':
+            STATUS_MARKERS = {
+                'deceased': '💀已死亡',
+                'missing': '❓已失踪',
+                'retired': '📤已退场',
+                'destroyed': '💀已覆灭'
+            }
+            status_marker = f" [{STATUS_MARKERS.get(char_status, char_status)}]"
+        base_info = f"- {c.name}({entity_type}, {c.role_type}){status_marker}"
+        
+        # 组织实体：补充组织详情
+        org_detail_str = ""
+        if c.is_organization and c.id in char_id_to_org:
+            org = char_id_to_org[c.id]
+            org_detail_parts = []
+            if c.organization_type:
+                org_detail_parts.append(f"类型:{c.organization_type}")
+            if c.organization_purpose:
+                purpose_preview = c.organization_purpose[:60] if len(c.organization_purpose) > 60 else c.organization_purpose
+                org_detail_parts.append(f"宗旨:{purpose_preview}")
+            if org.power_level is not None:
+                org_detail_parts.append(f"势力等级:{org.power_level}")
+            if org.location:
+                org_detail_parts.append(f"据点:{org.location}")
+            if org.motto:
+                org_detail_parts.append(f"口号:{org.motto}")
+            if org.member_count:
+                org_detail_parts.append(f"成员数:{org.member_count}")
+            if org_detail_parts:
+                org_detail_str = f" | {', '.join(org_detail_parts)}"
+            
+            # 显示组织的核心成员列表（最多5个）
+            if org.id in org_members_map and org_members_map[org.id]:
+                member_parts = []
+                for m in sorted(org_members_map[org.id], key=lambda x: -(x.rank or 0))[:5]:
+                    m_name = all_char_name_map.get(m.character_id, '未知')
+                    m_desc = f"{m_name}({m.position})"
+                    if m.status and m.status != 'active':
+                        m_desc += f"[{m.status}]"
+                    member_parts.append(m_desc)
+                if member_parts:
+                    org_detail_str += f" | 成员: {', '.join(member_parts)}"
         
         # 职业信息
         career_info_str = ""
@@ -764,6 +679,55 @@ async def build_characters_info_with_careers(
                     sub_list.append(f"{sub['name']}({stage_desc})")
                 career_info_str += f" | 副职业: {', '.join(sub_list)}"
         
+        # 心理状态（由章节分析自动更新）
+        state_str = ""
+        if c.current_state:
+            state_preview = c.current_state[:50] if len(c.current_state) > 50 else c.current_state
+            state_str = f" | 当前状态: {state_preview}"
+            if c.state_updated_chapter:
+                state_str += f"(第{c.state_updated_chapter}章)"
+        
+        # 组织成员信息（非组织角色才显示所属组织）
+        org_str = ""
+        if not c.is_organization and c.id in char_org_map and char_org_map[c.id]:
+            org_parts = []
+            for m in char_org_map[c.id][:3]:  # 最多显示3个组织
+                o_name = org_name_map.get(m.organization_id, '未知组织')
+                o_desc = f"{o_name}({m.position})"
+                if m.loyalty is not None and m.loyalty != 50:
+                    o_desc += f"[忠诚度:{m.loyalty}]"
+                if m.status and m.status != 'active':
+                    o_desc += f"[{m.status}]"
+                org_parts.append(o_desc)
+            if org_parts:
+                org_str = f" | 所属组织: {', '.join(org_parts)}"
+        
+        # 关系信息
+        rel_str = ""
+        if c.id in char_rels_map and char_rels_map[c.id]:
+            rel_parts = []
+            seen_pairs = set()  # 避免重复显示同一对关系
+            for r in char_rels_map[c.id][:5]:  # 最多显示5个关系
+                # 确定对方角色名
+                if r.character_from_id == c.id:
+                    other_name = all_char_name_map.get(r.character_to_id, '未知')
+                else:
+                    other_name = all_char_name_map.get(r.character_from_id, '未知')
+                
+                pair_key = tuple(sorted([c.id, r.character_from_id if r.character_from_id != c.id else r.character_to_id]))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                
+                rel_name = r.relationship_name or '关联'
+                rel_desc = f"{other_name}({rel_name})"
+                if r.intimacy_level is not None and r.intimacy_level != 50:
+                    rel_desc += f"[亲密度:{r.intimacy_level}]"
+                rel_parts.append(rel_desc)
+            
+            if rel_parts:
+                rel_str = f" | 关系: {', '.join(rel_parts)}"
+        
         # 性格描述
         personality_str = ""
         if c.personality:
@@ -771,7 +735,7 @@ async def build_characters_info_with_careers(
             personality_str = f": {personality_preview}"
         
         # 组合完整信息
-        full_info = base_info + career_info_str + personality_str
+        full_info = base_info + org_detail_str + career_info_str + state_str + org_str + rel_str + personality_str
         characters_info_parts.append(full_info)
     
     return "\n".join(characters_info_parts)
@@ -903,6 +867,63 @@ async def analyze_chapter_background(
         )
         logger.info(f"📋 后台分析 - 已获取{len(existing_foreshadows)}个已埋入伏笔用于匹配（含智能回收标记）")
         
+        # 获取项目角色信息（根据大纲/展开规划筛选本章相关角色）
+        filter_character_names = None
+        
+        # 1-N模式：从expansion_plan中提取character_focus
+        if chapter.expansion_plan:
+            try:
+                plan = json.loads(chapter.expansion_plan)
+                focus_names = plan.get('character_focus', [])
+                if focus_names:
+                    filter_character_names = focus_names
+                    logger.info(f"📋 从expansion_plan提取角色焦点: {filter_character_names}")
+            except (json.JSONDecodeError, Exception):
+                pass
+        
+        # 1-1模式：从outline.structure中提取characters
+        if not filter_character_names and chapter.outline_id:
+            try:
+                outline_result = await db_session.execute(
+                    select(Outline).where(Outline.id == chapter.outline_id)
+                )
+                chapter_outline = outline_result.scalar_one_or_none()
+                if chapter_outline and chapter_outline.structure:
+                    structure = json.loads(chapter_outline.structure)
+                    raw_characters = structure.get('characters', [])
+                    if raw_characters:
+                        filter_character_names = [
+                            c['name'] if isinstance(c, dict) else c
+                            for c in raw_characters
+                        ]
+                        logger.info(f"📋 从outline.structure提取角色: {filter_character_names}")
+            except (json.JSONDecodeError, Exception):
+                pass
+        
+        # 查询角色（根据筛选名单或全部）
+        characters_query = select(Character).where(Character.project_id == project_id)
+        if filter_character_names:
+            characters_query = characters_query.where(Character.name.in_(filter_character_names))
+        characters_result = await db_session.execute(characters_query)
+        project_characters = characters_result.scalars().all()
+        
+        # 如果筛选后无角色，降级为全部角色
+        if not project_characters and filter_character_names:
+            logger.warning(f"⚠️ 筛选后无匹配角色，降级为全部角色")
+            characters_result = await db_session.execute(
+                select(Character).where(Character.project_id == project_id)
+            )
+            project_characters = characters_result.scalars().all()
+            filter_character_names = None
+        
+        characters_info = await build_characters_info_with_careers(
+            db=db_session,
+            project_id=project_id,
+            characters=project_characters,
+            filter_character_names=filter_character_names
+        )
+        logger.info(f"📋 后台分析 - 已获取{len(project_characters)}个角色信息用于分析")
+        
         # 定义重试回调函数，用于在重试时更新任务状态
         async def on_retry_callback(attempt: int, max_retries: int, wait_time: int, error_reason: str):
             """重试时更新任务状态，让前端能感知到重试进度"""
@@ -924,7 +945,7 @@ async def analyze_chapter_background(
             except Exception as callback_error:
                 logger.warning(f"⚠️ 更新重试状态失败: {callback_error}")
         
-        # 3. 使用PlotAnalyzer分析章节（传入已有伏笔列表和重试回调）
+        # 3. 使用PlotAnalyzer分析章节（传入已有伏笔列表、角色信息和重试回调）
         analyzer = PlotAnalyzer(ai_service)
         analysis_result = await analyzer.analyze_chapter(
             chapter_number=chapter.chapter_number,
@@ -932,7 +953,8 @@ async def analyze_chapter_background(
             content=chapter.content,
             word_count=chapter.word_count or len(chapter.content),
             existing_foreshadows=existing_foreshadows,
-            on_retry=on_retry_callback
+            on_retry=on_retry_callback,
+            characters_info=characters_info
         )
         
         if not analysis_result:
@@ -1131,6 +1153,72 @@ async def analyze_chapter_background(
         else:
             logger.debug("📋 分析结果中无角色状态信息，跳过职业更新")
         
+        # 👤 更新角色心理状态和关系（根据分析结果）
+        if analysis_result.get('character_states'):
+            try:
+                from app.services.character_state_update_service import CharacterStateUpdateService
+                
+                logger.info(f"👤 开始根据分析结果更新角色状态、关系和组织成员...")
+                async with write_lock:
+                    state_update_result = await CharacterStateUpdateService.update_from_analysis(
+                        db=db_session,
+                        project_id=project_id,
+                        character_states=analysis_result.get('character_states', []),
+                        chapter_id=chapter_id,
+                        chapter_number=chapter.chapter_number
+                    )
+                
+                total_state_changes = (
+                    state_update_result['state_updated_count'] +
+                    state_update_result['relationship_created_count'] +
+                    state_update_result['relationship_updated_count'] +
+                    state_update_result.get('org_updated_count', 0)
+                )
+                if total_state_changes > 0:
+                    logger.info(
+                        f"✅ 角色状态更新: 心理状态{state_update_result['state_updated_count']}个, "
+                        f"新建关系{state_update_result['relationship_created_count']}个, "
+                        f"更新关系{state_update_result['relationship_updated_count']}个, "
+                        f"组织变动{state_update_result.get('org_updated_count', 0)}个"
+                    )
+                    if state_update_result['changes']:
+                        for change in state_update_result['changes'][:8]:
+                            logger.info(f"  - {change}")
+                else:
+                    logger.info("ℹ️ 本章节无角色状态、关系或组织变化")
+                    
+            except Exception as state_error:
+                # 角色状态更新失败不应影响整个分析流程
+                logger.error(f"⚠️ 更新角色状态、关系和组织失败: {str(state_error)}", exc_info=True)
+        
+        # 🏛️ 更新组织自身状态（根据分析结果）
+        if analysis_result.get('organization_states'):
+            try:
+                from app.services.character_state_update_service import CharacterStateUpdateService
+                
+                logger.info(f"🏛️ 开始根据分析结果更新组织自身状态...")
+                async with write_lock:
+                    org_state_result = await CharacterStateUpdateService.update_organization_states(
+                        db=db_session,
+                        project_id=project_id,
+                        organization_states=analysis_result.get('organization_states', []),
+                        chapter_number=chapter.chapter_number
+                    )
+                
+                if org_state_result['updated_count'] > 0:
+                    logger.info(
+                        f"✅ 组织状态更新: {org_state_result['updated_count']}个组织"
+                    )
+                    if org_state_result['changes']:
+                        for change in org_state_result['changes'][:5]:
+                            logger.info(f"  - {change}")
+                else:
+                    logger.info("ℹ️ 本章节无组织自身状态变化")
+                    
+            except Exception as org_state_error:
+                # 组织状态更新失败不应影响整个分析流程
+                logger.error(f"⚠️ 更新组织自身状态失败: {str(org_state_error)}", exc_info=True)
+        
         # 🔮 自动更新伏笔状态（根据分析结果）
         if analysis_result.get('foreshadows'):
             try:
@@ -1319,13 +1407,21 @@ async def generate_chapter_content_stream(
                 outline_mode = project.outline_mode if project else 'one-to-many'
                 logger.info(f"📋 项目大纲模式: {outline_mode}")
                 
-                # 获取对应的大纲
-                outline_result = await db_session.execute(
-                    select(Outline)
-                    .where(Outline.project_id == current_chapter.project_id)
-                    .where(Outline.order_index == current_chapter.chapter_number)
-                    .execution_options(populate_existing=True)
-                )
+                # 获取对应的大纲（优先使用 chapter.outline_id 直接关联）
+                if current_chapter.outline_id:
+                    outline_result = await db_session.execute(
+                        select(Outline)
+                        .where(Outline.id == current_chapter.outline_id)
+                        .execution_options(populate_existing=True)
+                    )
+                else:
+                    # 回退到按序号查找
+                    outline_result = await db_session.execute(
+                        select(Outline)
+                        .where(Outline.project_id == current_chapter.project_id)
+                        .where(Outline.order_index == current_chapter.chapter_number)
+                        .execution_options(populate_existing=True)
+                    )
                 outline = outline_result.scalar_one_or_none()
                 
                 # 获取写作风格
@@ -1429,6 +1525,7 @@ async def generate_chapter_content_stream(
                             genre=project.genre or '未设定',
                             narrative_perspective=chapter_perspective,
                             previous_chapter_content=chapter_context.continuation_point,
+                            previous_chapter_summary=chapter_context.previous_chapter_summary or '（无上一章摘要）',
                             characters_info=chapter_context.chapter_characters or '暂无角色信息',
                             chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                             foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
@@ -1476,9 +1573,10 @@ async def generate_chapter_content_stream(
                             genre=project.genre or '未设定',
                             narrative_perspective=chapter_perspective,
                             characters_info=chapter_context.chapter_characters or '暂无角色信息',
+                            chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                             foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
                             previous_chapter_summary=previous_summary,
-                            story_skeleton=chapter_context.story_skeleton or '',
+                            recent_chapters_context=chapter_context.recent_chapters_context or '',
                             relevant_memories=chapter_context.relevant_memories or ''
                         )
                         logger.debug(f"创建第{current_chapter.chapter_number}章提示词: {base_prompt}")
@@ -1495,7 +1593,10 @@ async def generate_chapter_content_stream(
                             target_word_count=target_word_count,
                             genre=project.genre or '未设定',
                             narrative_perspective=chapter_perspective,
-                            characters_info=chapter_context.chapter_characters or '暂无角色信息'
+                            characters_info=chapter_context.chapter_characters or '暂无角色信息',
+                            chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
+                            foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                            relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
                         )
                         logger.debug(f"创建第一章提示词: {base_prompt}")
                 
@@ -2658,49 +2759,19 @@ async def generate_single_chapter_for_batch(
     outline_mode = project.outline_mode if project else 'one-to-many'
     logger.info(f"📋 批量生成 - 项目大纲模式: {outline_mode}")
     
-    # 获取对应的大纲
-    outline_result = await db_session.execute(
-        select(Outline)
-        .where(Outline.project_id == chapter.project_id)
-        .where(Outline.order_index == chapter.chapter_number)
-    )
-    outline = outline_result.scalar_one_or_none()
-    
-    # 获取角色信息（包含职业信息）
-    characters_result = await db_session.execute(
-        select(Character).where(Character.project_id == chapter.project_id)
-    )
-    characters = characters_result.scalars().all()
-    
-    # 📝 根据大纲模式智能筛选相关角色（批量生成）
-    filter_character_names = None
-    if outline_mode == 'one-to-one':
-        # 1-1模式：从outline.structure中提取characters字段
-        if outline and outline.structure:
-            try:
-                structure = json.loads(outline.structure)
-                filter_character_names = structure.get('characters', [])
-                if filter_character_names:
-                    logger.info(f"📋 批量生成 - 1-1模式：从structure提取角色列表 {filter_character_names}")
-            except json.JSONDecodeError:
-                logger.warning(f"⚠️ 批量生成 - outline.structure解析失败，使用全部角色")
+    # 获取对应的大纲（优先使用 chapter.outline_id 直接关联）
+    if chapter.outline_id:
+        outline_result = await db_session.execute(
+            select(Outline).where(Outline.id == chapter.outline_id)
+        )
     else:
-        # 1-n模式：从chapter.expansion_plan中提取character_focus字段
-        if chapter.expansion_plan:
-            try:
-                plan = json.loads(chapter.expansion_plan)
-                filter_character_names = plan.get('character_focus', [])
-                if filter_character_names:
-                    logger.info(f"📋 批量生成 - 1-n模式：从expansion_plan提取角色焦点 {filter_character_names}")
-            except json.JSONDecodeError:
-                logger.warning(f"⚠️ 批量生成 - expansion_plan解析失败，使用全部角色")
-    
-    characters_info = await build_characters_info_with_careers(
-        db=db_session,
-        project_id=chapter.project_id,
-        characters=characters,
-        filter_character_names=filter_character_names
-    )
+        # 回退到按序号查找
+        outline_result = await db_session.execute(
+            select(Outline)
+            .where(Outline.project_id == chapter.project_id)
+            .where(Outline.order_index == chapter.chapter_number)
+        )
+    outline = outline_result.scalar_one_or_none()
     
     # 获取写作风格
     style_content = ""
@@ -2753,52 +2824,8 @@ async def generate_single_chapter_for_batch(
     logger.info(f"  - 相关记忆: {chapter_context.context_stats.get('memory_count', 0)} 条")
     logger.info(f"  - 总上下文长度: {chapter_context.context_stats.get('total_length', 0)} 字符")
     
-    # 📋 根据大纲模式构建差异化的章节大纲上下文
-    chapter_outline_content = ""
-    if outline_mode == 'one-to-one':
-        # 一对一模式：使用大纲的 content
-        chapter_outline_content = outline.content if outline else chapter.summary or '暂无大纲'
-        logger.info(f"✏️ 批量生成 - 一对一模式：使用大纲内容")
-    else:
-        # 一对多模式：优先使用 expansion_plan 的详细规划
-        if chapter.expansion_plan:
-            try:
-                plan = json.loads(chapter.expansion_plan)
-                chapter_outline_content = f"""【本章详细规划】
-剧情摘要：{plan.get('plot_summary', '无')}
-
-关键事件：
-{chr(10).join(f'- {event}' for event in plan.get('key_events', []))}
-
-角色焦点：{', '.join(plan.get('character_focus', []))}
-
-情感基调：{plan.get('emotional_tone', '未设定')}
-
-叙事目标：{plan.get('narrative_goal', '未设定')}
-
-冲突类型：{plan.get('conflict_type', '未设定')}"""
-                
-                # 可选：附加章节 summary
-                if chapter.summary and chapter.summary.strip():
-                    chapter_outline_content += f"\n\n【章节补充说明】\n{chapter.summary}"
-                
-                # 可选：附加大纲的背景信息（限制长度）
-                if outline:
-                    outline_bg = outline.content
-                    if len(outline_bg) > 200:
-                        outline_bg = outline_bg[:200] + "..."
-                    chapter_outline_content += f"\n\n【大纲节点背景】\n{outline_bg}"
-                
-                logger.info(f"✏️ 批量生成 - 一对多模式：使用expansion_plan详细规划")
-            except json.JSONDecodeError as e:
-                logger.warning(f"⚠️ expansion_plan解析失败: {e}，回退到大纲内容")
-                chapter_outline_content = outline.content if outline else chapter.summary or '暂无大纲'
-        else:
-            # 没有expansion_plan，使用大纲内容
-            chapter_outline_content = outline.content if outline else chapter.summary or '暂无大纲'
-            logger.warning(f"⚠️ 批量生成 - 一对多模式但无expansion_plan，使用大纲内容")
-    
     # 🚀 根据大纲模式选择提示词模板（批量生成）
+    # 统一使用 context_builder 构建的 chapter_context 结果，与单章生成保持一致
     if outline_mode == 'one-to-one':
         # 1-1模式
         if chapter_context.continuation_point:
@@ -2817,7 +2844,8 @@ async def generate_single_chapter_for_batch(
                 characters_info=chapter_context.chapter_characters or '暂无角色信息',
                 chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                 foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
-                relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
+                relevant_memories=chapter_context.relevant_memories or '暂无相关记忆',
+                previous_chapter_summary=chapter_context.previous_chapter_summary or ''
             )
         else:
             # 第一章
@@ -2837,17 +2865,16 @@ async def generate_single_chapter_for_batch(
                 relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
             )
     else:
-        # 1-n模式：使用原有的完整模板
+        # 1-n模式：使用 context_builder 构建的结果，与单章生成保持一致
         if chapter_context.continuation_point:
             # 有前置内容，使用 WITH_CONTEXT 模板
+            # 优先使用 context_builder 的摘要，其次使用传入的 previous_summary_context
             final_prev_summary = "（无上一章摘要，请根据锚点续写）"
             
-            if previous_summary_context:
+            if chapter_context.previous_chapter_summary:
+                final_prev_summary = chapter_context.previous_chapter_summary
+            elif previous_summary_context:
                 final_prev_summary = previous_summary_context
-            elif hasattr(chapter_context, 'recent_summary') and chapter_context.recent_summary:
-                lines = chapter_context.recent_summary.strip().split('\n')
-                if lines:
-                    final_prev_summary = lines[-1]
                     
             template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", user_id, db_session)
             base_prompt = PromptService.format_prompt(
@@ -2855,15 +2882,16 @@ async def generate_single_chapter_for_batch(
                 project_title=project.title,
                 chapter_number=chapter.chapter_number,
                 chapter_title=chapter.title,
-                chapter_outline=chapter_outline_content,
+                chapter_outline=chapter_context.chapter_outline,
                 target_word_count=target_word_count,
                 continuation_point=chapter_context.continuation_point,
                 genre=project.genre or '未设定',
                 narrative_perspective=project.narrative_perspective or '第三人称',
-                characters_info=characters_info or '暂无角色信息',
+                characters_info=chapter_context.chapter_characters or '暂无角色信息',
+                chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                 foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
                 previous_chapter_summary=final_prev_summary,
-                story_skeleton=chapter_context.story_skeleton or '',
+                recent_chapters_context=chapter_context.recent_chapters_context or '',
                 relevant_memories=chapter_context.relevant_memories or ''
             )
         else:
@@ -2874,11 +2902,14 @@ async def generate_single_chapter_for_batch(
                 project_title=project.title,
                 chapter_number=chapter.chapter_number,
                 chapter_title=chapter.title,
-                chapter_outline=chapter_outline_content,
+                chapter_outline=chapter_context.chapter_outline,
                 target_word_count=target_word_count,
                 genre=project.genre or '未设定',
                 narrative_perspective=project.narrative_perspective or '第三人称',
-                characters_info=characters_info or '暂无角色信息'
+                characters_info=chapter_context.chapter_characters or '暂无角色信息',
+                chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
+                foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
             )
     
     # 应用写作风格
@@ -3050,12 +3081,18 @@ async def regenerate_chapter_stream(
             
             filter_character_names = None
             if outline_mode == 'one-to-one':
-                # 1-1模式：从outline.structure中提取characters字段
-                outline_result_temp = await temp_db.execute(
-                    select(Outline.structure)
-                    .where(Outline.project_id == chapter.project_id)
-                    .where(Outline.order_index == chapter.chapter_number)
-                )
+                # 1-1模式：从outline.structure中提取characters字段（优先使用 outline_id）
+                if chapter.outline_id:
+                    outline_result_temp = await temp_db.execute(
+                        select(Outline.structure)
+                        .where(Outline.id == chapter.outline_id)
+                    )
+                else:
+                    outline_result_temp = await temp_db.execute(
+                        select(Outline.structure)
+                        .where(Outline.project_id == chapter.project_id)
+                        .where(Outline.order_index == chapter.chapter_number)
+                    )
                 outline_structure = outline_result_temp.scalar_one_or_none()
                 if outline_structure:
                     try:
@@ -3083,12 +3120,18 @@ async def regenerate_chapter_stream(
                 filter_character_names=filter_character_names
             )
             
-            # 获取章节大纲
-            outline_result = await temp_db.execute(
-                select(Outline)
-                .where(Outline.project_id == chapter.project_id)
-                .where(Outline.order_index == chapter.chapter_number)
-            )
+            # 获取章节大纲（优先使用 chapter.outline_id 直接关联）
+            if chapter.outline_id:
+                outline_result = await temp_db.execute(
+                    select(Outline).where(Outline.id == chapter.outline_id)
+                )
+            else:
+                # 回退到按序号查找
+                outline_result = await temp_db.execute(
+                    select(Outline)
+                    .where(Outline.project_id == chapter.project_id)
+                    .where(Outline.order_index == chapter.chapter_number)
+                )
             outline = outline_result.scalar_one_or_none()
             
             # 获取写作风格

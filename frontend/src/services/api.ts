@@ -383,35 +383,6 @@ export const outlineApi = {
   generateOutline: (data: GenerateOutlineRequest) =>
     api.post<unknown, { total: number; items: Outline[] }>('/outlines/generate', data).then(res => res.items),
 
-  // 预测续写所需角色
-  predictCharacters: (data: {
-    project_id: string;
-    start_chapter: number;
-    chapter_count: number;
-    plot_stage: string;
-    story_direction?: string;
-    enable_mcp: boolean;
-  }) =>
-    api.post<unknown, {
-      needs_new_characters: boolean;
-      reason: string;
-      character_count: number;
-      predicted_characters: Array<{
-        name: string | null;
-        role_description: string;
-        suggested_role_type: string;
-        importance: string;
-        appearance_chapter: number;
-        key_abilities: string[];
-        plot_function: string;
-        relationship_suggestions: Array<{
-          target_character_name: string;
-          relationship_type: string;
-          description?: string;
-        }>;
-      }>;
-    }>('/outlines/predict-characters', data),
-
   // 获取大纲关联的章节
   getOutlineChapters: (outlineId: string) =>
     api.get<unknown, {

@@ -324,26 +324,36 @@ class PromptService:
 
 [
   {{
-    "chapter_number": 1,
-    "title": "章节标题",
-    "summary": "章节概要（500-1000字）：主要情节、角色互动、关键事件、冲突与转折",
-    "scenes": ["场景1描述", "场景2描述", "场景3描述"],
-    "characters": ["涉及角色1", "涉及角色2"],
-    "key_points": ["情节要点1", "情节要点2"],
-    "emotion": "本章情感基调",
-    "goal": "本章叙事目标"
-  }},
-  {{
-    "chapter_number": 2,
-    "title": "章节标题",
-    "summary": "章节概要...",
-    "scenes": ["场景1", "场景2"],
-    "characters": ["角色1", "角色2"],
-    "key_points": ["要点1", "要点2"],
-    "emotion": "情感基调",
-    "goal": "叙事目标"
-  }}
+   "chapter_number": 1,
+   "title": "章节标题",
+   "summary": "章节概要（500-1000字）：主要情节、角色互动、关键事件、冲突与转折",
+   "scenes": ["场景1描述", "场景2描述", "场景3描述"],
+   "characters": [
+     {{"name": "角色名1", "type": "character"}},
+     {{"name": "组织/势力名1", "type": "organization"}}
+   ],
+   "key_points": ["情节要点1", "情节要点2"],
+   "emotion": "本章情感基调",
+   "goal": "本章叙事目标"
+ }},
+ {{
+   "chapter_number": 2,
+   "title": "章节标题",
+   "summary": "章节概要...",
+   "scenes": ["场景1", "场景2"],
+   "characters": [
+     {{"name": "角色名2", "type": "character"}},
+     {{"name": "组织名2", "type": "organization"}}
+   ],
+   "key_points": ["要点1", "要点2"],
+   "emotion": "情感基调",
+   "goal": "叙事目标"
+ }}
 ]
+
+【characters字段说明】
+- type为"character"表示个人角色，type为"organization"表示组织/势力/门派/帮派等
+- 必须区分角色和组织，不要把组织当作角色
 
 【格式规范】
 - 纯JSON数组输出，无markdown标记
@@ -435,26 +445,36 @@ class PromptService:
 
 [
   {{
-    "chapter_number": {start_chapter},
-    "title": "章节标题",
-    "summary": "章节概要（500-1000字）：主要情节、角色互动、关键事件、冲突与转折",
-    "scenes": ["场景1描述", "场景2描述", "场景3描述"],
-    "characters": ["涉及角色1", "涉及角色2"],
-    "key_points": ["情节要点1", "情节要点2"],
-    "emotion": "本章情感基调",
-    "goal": "本章叙事目标"
-  }},
-  {{
-    "chapter_number": {start_chapter} + 1,
-    "title": "章节标题",
-    "summary": "章节概要...",
-    "scenes": ["场景1", "场景2"],
-    "characters": ["角色1", "角色2"],
-    "key_points": ["要点1", "要点2"],
-    "emotion": "情感基调",
-    "goal": "叙事目标"
-  }}
+   "chapter_number": {start_chapter},
+   "title": "章节标题",
+   "summary": "章节概要（500-1000字）：主要情节、角色互动、关键事件、冲突与转折",
+   "scenes": ["场景1描述", "场景2描述", "场景3描述"],
+   "characters": [
+     {{"name": "角色名1", "type": "character"}},
+     {{"name": "组织/势力名1", "type": "organization"}}
+   ],
+   "key_points": ["情节要点1", "情节要点2"],
+   "emotion": "本章情感基调",
+   "goal": "本章叙事目标"
+ }},
+ {{
+   "chapter_number": {start_chapter} + 1,
+   "title": "章节标题",
+   "summary": "章节概要...",
+   "scenes": ["场景1", "场景2"],
+   "characters": [
+     {{"name": "角色名2", "type": "character"}},
+     {{"name": "组织名2", "type": "organization"}}
+   ],
+   "key_points": ["要点1", "要点2"],
+   "emotion": "情感基调",
+   "goal": "叙事目标"
+ }}
 ]
+
+【characters字段说明】
+- type为"character"表示个人角色，type为"organization"表示组织/势力/门派/帮派等
+- 必须区分角色和组织，不要把组织当作角色
 
 【格式规范】
 - 纯JSON数组输出，无markdown标记
@@ -505,21 +525,45 @@ class PromptService:
 </outline>
 
 <characters priority="P1">
-【本章角色】
+【本章角色 - 请严格遵循角色设定】
 {characters_info}
+
+⚠️ 角色互动须知：
+- 角色之间的对话和行为必须符合其关系设定（如师徒、敌对等）
+- 涉及组织的情节须体现角色在组织中的身份和职位
+- 角色的能力表现须符合其职业和阶段设定
 </characters>
+
+<careers priority="P2">
+【本章职业】
+{chapter_careers}
+</careers>
+
+<foreshadow_reminders priority="P2">
+【🎯 伏笔提醒】
+{foreshadow_reminders}
+</foreshadow_reminders>
+
+<memory priority="P2">
+【相关记忆】
+{relevant_memories}
+</memory>
 
 <constraints>
 【必须遵守】
 ✅ 严格按照大纲推进情节
 ✅ 保持角色性格、说话方式一致
+✅ 角色互动须符合关系设定（师徒、朋友、敌对等）
+✅ 组织相关情节须体现成员身份和职位层级
 ✅ 字数控制在目标范围内
+✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
 
 【禁止事项】
 ❌ 输出章节标题、序号等元信息
 ❌ 使用"总之"、"综上所述"等AI常见总结语
 ❌ 在结尾处使用开放式反问
 ❌ 添加作者注释或创作说明
+❌ 角色行为超出其职业阶段的能力范围
 </constraints>
 
 <output>
@@ -559,11 +603,22 @@ class PromptService:
 {chapter_careers}
 </careers>
 
+<foreshadow_reminders priority="P2">
+【🎯 伏笔提醒】
+{foreshadow_reminders}
+</foreshadow_reminders>
+
+<memory priority="P2">
+【相关记忆】
+{relevant_memories}
+</memory>
+
 <constraints>
 【必须遵守】
 ✅ 严格按照大纲推进情节
 ✅ 保持角色性格、说话方式一致
 ✅ 字数需要严格控制在目标字数内
+✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
 
 【禁止事项】
 ❌ 输出章节标题、序号等元信息
@@ -598,6 +653,11 @@ class PromptService:
 【本章大纲】
 {chapter_outline}
 </outline>
+
+<previous_chapter_summary priority="P1">
+【上一章剧情概要】
+{previous_chapter_summary}
+</previous_chapter_summary>
 
 <previous_chapter priority="P1">
 【上一章末尾500字内容】
@@ -668,6 +728,11 @@ class PromptService:
 {chapter_outline}
 </outline>
 
+<recent_context priority="P1">
+【最近章节规划 - 故事脉络参考】
+{recent_chapters_context}
+</recent_context>
+
 <continuation priority="P0">
 【衔接锚点 - 必须承接】
 上一章结尾：
@@ -684,9 +749,19 @@ class PromptService:
 </continuation>
 
 <characters priority="P1">
-【本章角色】
+【本章角色 - 请严格遵循角色设定】
 {characters_info}
+
+⚠️ 角色互动须知：
+- 角色之间的对话和行为必须符合其关系设定（如师徒、敌对等）
+- 涉及组织的情节须体现角色在组织中的身份和职位
+- 角色的能力表现须符合其职业和阶段设定
 </characters>
+
+<careers priority="P2">
+【本章职业】
+{chapter_careers}
+</careers>
 
 <foreshadow_reminders priority="P1">
 【🎯 伏笔提醒 - 需关注】
@@ -698,16 +773,13 @@ class PromptService:
 {relevant_memories}
 </memory>
 
-<skeleton priority="P2">
-【故事骨架 - 背景】
-{story_skeleton}
-</skeleton>
-
 <constraints>
 【必须遵守】
 ✅ 严格按照大纲推进情节
 ✅ 自然承接上一章结尾，不重复已发生事件
 ✅ 保持角色性格、说话方式一致
+✅ 角色互动须符合关系设定（师徒、朋友、敌对等）
+✅ 组织相关情节须体现成员身份和职位层级
 ✅ 字数控制在目标范围内
 ✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
 
@@ -723,6 +795,7 @@ class PromptService:
 ❌ 添加作者注释或创作说明
 ❌ 重复叙述上一章已发生的事件（包括环境描写、心理活动）
 ❌ 在开篇使用"接上回"、"书接上文"等套话
+❌ 角色行为超出其职业阶段的能力范围
 </constraints>
 
 <output>
@@ -947,6 +1020,13 @@ class PromptService:
 {existing_foreshadows}
 </existing_foreshadows>
 
+<characters priority="P1">
+【项目角色信息 - 用于角色状态分析】
+以下是项目中已有的角色列表，分析 character_states 和 relationship_changes 时请使用这些角色的准确名称：
+
+{characters_info}
+</characters>
+
 <analysis_framework priority="P0">
 【分析维度】
 
@@ -1006,12 +1086,33 @@ class PromptService:
 - 关系变化
 - 关键行动和决策
 - 成长或退步
-- **💼 职业变化（可选）**：
+- **💀 存活状态（重要）**：
+  - survival_status: 角色当前存活状态
+  - 可选值：active(正常)/deceased(死亡)/missing(失踪)/retired(退场)
+  - 默认为null（表示无变化），仅当章节中角色明确死亡、失踪或永久退场时才填写
+  - 死亡/失踪需要有明确的剧情依据，不可臆测
+- ** 职业变化（可选）**：
   - 仅当章节明确描述职业进展时填写
   - main_career_stage_change: 整数(+1晋升/-1退步/0无变化)
   - sub_career_changes: 副职业变化数组
   - new_careers: 新获得职业
   - career_breakthrough: 突破过程描述
+- **🏛️ 组织变化（可选）**：
+  - 仅当章节明确描述角色与组织关系变化时填写
+  - organization_changes: 组织变动数组
+  - 每项包含：organization_name(组织名)、change_type(加入joined/离开left/晋升promoted/降级demoted/开除expelled/叛变betrayed)、new_position(新职位，可选)、loyalty_change(忠诚度变化描述，可选)、description(变化描述)
+
+**5b. 组织状态追踪 (Organization Status) - 可选**
+仅当章节涉及组织势力变化时填写，分析出场组织的状态变化：
+- 组织名称
+- 势力等级变化(power_change: 整数，+N增强/-N削弱/0无变化)
+- 据点变化(new_location: 新据点，可选)
+- 宗旨/目标变化(new_purpose: 新目标，可选)
+- 组织状态描述(status_description: 当前状态概述)
+- 关键事件(key_event: 触发变化的事件)
+- **💀 组织存续状态（重要）**：
+  - is_destroyed: 组织是否被覆灭（true/false，默认false）
+  - 仅当章节明确描述组织被彻底消灭、瓦解、灭亡时设为true
 
 **6. 关键情节点 (Plot Points)**
 列出3-5个核心情节点：
@@ -1128,6 +1229,7 @@ class PromptService:
   "character_states": [
     {{
       "character_name": "张三",
+      "survival_status": null,
       "state_before": "犹豫",
       "state_after": "坚定",
       "psychological_change": "心理变化描述",
@@ -1138,7 +1240,16 @@ class PromptService:
         "sub_career_changes": [{{"career_name": "炼丹", "stage_change": 1}}],
         "new_careers": [],
         "career_breakthrough": "突破描述"
-      }}
+      }},
+      "organization_changes": [
+        {{
+          "organization_name": "某门派",
+          "change_type": "promoted",
+          "new_position": "长老",
+          "loyalty_change": "忠诚度提升",
+          "description": "因立下大功被提拔为长老"
+        }}
+      ]
     }}
   ],
   "plot_points": [
@@ -1155,6 +1266,17 @@ class PromptService:
       "location": "地点",
       "atmosphere": "氛围",
       "duration": "时长估计"
+    }}
+  ],
+  "organization_states": [
+    {{
+      "organization_name": "某门派",
+      "power_change": -10,
+      "new_location": null,
+      "new_purpose": null,
+      "status_description": "因内乱势力受损，但核心力量未动摇",
+      "key_event": "长老叛变导致分支瓦解",
+      "is_destroyed": false
     }}
   ],
   "pacing": "varied",
@@ -1181,6 +1303,10 @@ class PromptService:
 ✅ 逐字复制：keyword必须从原文复制，长度8-25字
 ✅ 精确定位：keyword能在原文中精确找到
 ✅ 职业变化可选：仅当章节明确描述时填写
+✅ 组织变化可选：仅当章节明确描述角色与组织关系变动时填写（character_states中的organization_changes）
+✅ 组织状态可选：仅当章节明确描述组织势力/据点/目标变化时填写（organization_states顶级字段）
+✅ 存活状态谨慎：survival_status仅当章节有明确死亡/失踪/退场描写时填写，默认null
+✅ 组织覆灭谨慎：is_destroyed仅当组织被彻底消灭时设true，组织受损不算覆灭
 ✅ 【伏笔ID追踪】回收伏笔时，必须从【已埋入伏笔列表】中查找匹配的ID填入 reference_foreshadow_id
 
 【评分约束 - 严格执行】
@@ -1199,6 +1325,8 @@ class PromptService:
 ❌ 输出markdown标记
 ❌ 遗漏必填的keyword字段
 ❌ 无根据地添加职业变化
+❌ 无根据地添加组织变化或组织状态变化
+❌ 无确切剧情依据地标记角色死亡或组织覆灭
 ❌ 所有章节都打7-8分的"安全分"
 ❌ 高分章节给大量建议，或低分章节不给建议
 </constraints>"""
