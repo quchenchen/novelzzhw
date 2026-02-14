@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Typography, Space, Divider, Badge, Button, Grid } from 'antd';
-import { GithubOutlined, CopyrightOutlined, HeartFilled, ClockCircleOutlined, GiftOutlined } from '@ant-design/icons';
+import { Typography, Space, Divider, Badge, Grid } from 'antd';
+import { GithubOutlined, CopyrightOutlined, HeartFilled, ClockCircleOutlined } from '@ant-design/icons';
 import { VERSION_INFO, getVersionString } from '../config/version';
 import { checkLatestVersion } from '../services/versionService';
 
