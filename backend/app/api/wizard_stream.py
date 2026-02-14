@@ -445,6 +445,16 @@ async def career_system_generator(
                             else:
                                 attribute_bonuses_json = None
 
+                            special_abilities = career_info.get("special_abilities")
+                            # 处理special_abilities：如果是列表则转换为JSON字符串
+                            if special_abilities:
+                                if isinstance(special_abilities, list):
+                                    special_abilities_json = json.dumps(special_abilities, ensure_ascii=False)
+                                else:
+                                    special_abilities_json = special_abilities
+                            else:
+                                special_abilities_json = None
+
                             career = Career(
                                 project_id=project.id,
                                 name=career_info.get("name", f"未命名主职业{idx+1}"),
@@ -454,7 +464,7 @@ async def career_system_generator(
                                 stages=stages_json,
                                 max_stage=career_info.get("max_stage", 10),
                                 requirements=career_info.get("requirements"),
-                                special_abilities=career_info.get("special_abilities"),
+                                special_abilities=special_abilities_json,
                                 worldview_rules=career_info.get("worldview_rules"),
                                 attribute_bonuses=attribute_bonuses_json,
                                 source="ai"
@@ -483,6 +493,16 @@ async def career_system_generator(
                             else:
                                 attribute_bonuses_json = None
 
+                            special_abilities = career_info.get("special_abilities")
+                            # 处理special_abilities：如果是列表则转换为JSON字符串
+                            if special_abilities:
+                                if isinstance(special_abilities, list):
+                                    special_abilities_json = json.dumps(special_abilities, ensure_ascii=False)
+                                else:
+                                    special_abilities_json = special_abilities
+                            else:
+                                special_abilities_json = None
+
                             career = Career(
                                 project_id=project.id,
                                 name=career_info.get("name", f"未命名副职业{idx+1}"),
@@ -492,7 +512,7 @@ async def career_system_generator(
                                 stages=stages_json,
                                 max_stage=career_info.get("max_stage", 5),
                                 requirements=career_info.get("requirements"),
-                                special_abilities=career_info.get("special_abilities"),
+                                special_abilities=special_abilities_json,
                                 worldview_rules=career_info.get("worldview_rules"),
                                 attribute_bonuses=attribute_bonuses_json,
                                 source="ai"
