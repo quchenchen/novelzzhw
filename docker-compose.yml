@@ -64,7 +64,6 @@ services:
       - ./logs:/app/logs
       - ./storage/generated_covers:/app/storage/generated_covers
       - ./backend/static:/app/static
-      - ./.env:/app/.env:ro
     environment:
       # 时区配置
       - TZ=${TZ:-Asia/Shanghai}

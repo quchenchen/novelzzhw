@@ -10,7 +10,7 @@ set -e
 INSTALL_DIR="$HOME/MuMuAINovel"                    # 项目安装目录
 DATA_DIR="$HOME/mumuainovel/data"                   # 数据库目录
 LOG_DIR="$HOME/mumuainovel/logs"                    # 日志目录
-REPO="https://ghfast.top/https://github.com/xiamuceer-j/MuMuAINovel.git"  # GitHub 镜像
+REPO="https://ghfast.top/https://github.com/quchenchen/novelzzhw.git"  # GitHub 镜像
 
 # ── 输出函数 ──────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
