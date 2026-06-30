@@ -19,6 +19,7 @@ from app.models.project import Project
 from app.models.settings import Settings
 from app.services.cover_providers.base_cover_provider import BaseCoverProvider, CoverGenerationResult
 from app.services.cover_providers.gemini_cover_provider import GeminiCoverProvider
+from app.services.cover_providers.grsai_cover_provider import GrsaiCoverProvider
 from app.services.cover_providers.grok_cover_provider import GrokCoverProvider
 from app.services.prompt_service import PromptService
 
@@ -221,6 +222,11 @@ class CoverGenerationService:
     ) -> BaseCoverProvider:
         provider_value = (provider or "").lower().strip()
         normalized_base_url = (api_base_url or "").rstrip("/")
+
+        # Check for GrsAI by provider value or base_url
+        if provider_value == "grsai" or "grsai" in normalized_base_url.lower():
+            return GrsaiCoverProvider(api_key=api_key, base_url=normalized_base_url)
+
         if provider_value == "gemini":
             return GeminiCoverProvider(api_key=api_key, base_url=normalized_base_url)
         if provider_value == "grok":
@@ -229,7 +235,7 @@ class CoverGenerationService:
             if normalized_base_url.endswith("/v1beta"):
                 return GeminiCoverProvider(api_key=api_key, base_url=normalized_base_url)
             return GrokCoverProvider(api_key=api_key, base_url=normalized_base_url or "https://api.mumuverse.space/v1")
-        raise HTTPException(status_code=400, detail="当前版本仅支持 Gemini、Grok 或 MuMuのAPI 作为封面图片 Provider")
+        raise HTTPException(status_code=400, detail="当前版本仅支持 Gemini、Grok、GrsAI 或 MuMuのAPI 作为封面图片 Provider")
 
     def _save_cover_file(
         self,

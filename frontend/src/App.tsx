@@ -22,12 +22,10 @@ import UserManagement from './pages/UserManagement';
 import PromptTemplates from './pages/PromptTemplates';
 import SkillChat from './pages/SkillChat';
 import SkillManage from './pages/SkillManage';
-import Sponsor from './pages/Sponsor';
 // import Polish from './pages/Polish';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/ProtectedRoute';
-import AppFooter from './components/AppFooter';
 import SpringFestival from './components/SpringFestival';
 import './App.css';
 
@@ -43,20 +41,20 @@ function App() {
         }}
       >
         <Routes>
-          <Route path="/login" element={<><Login /><AppFooter /></>} />
+          <Route path="/login" element={<Login />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
 
-          <Route path="/" element={<ProtectedRoute><><ProjectList /><AppFooter sidebarWidth={220} /></></ProtectedRoute>} />
-          <Route path="/projects" element={<ProtectedRoute><><ProjectList /><AppFooter sidebarWidth={220} /></></ProtectedRoute>} />
+          <Route path="/" element={<ProtectedRoute><ProjectList /></ProtectedRoute>} />
+          <Route path="/projects" element={<ProtectedRoute><ProjectList /></ProtectedRoute>} />
           <Route path="/wizard" element={<ProtectedRoute><ProjectWizardNew /></ProtectedRoute>} />
           <Route path="/inspiration" element={<ProtectedRoute><Inspiration /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/prompt-templates" element={<ProtectedRoute><><PromptTemplates /><AppFooter /></></ProtectedRoute>} />
+          <Route path="/prompt-templates" element={<ProtectedRoute><PromptTemplates /></ProtectedRoute>} />
           <Route path="/mcp-plugins" element={<ProtectedRoute><MCPPlugins /></ProtectedRoute>} />
           <Route path="/user-management" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
           <Route path="/chapters/:chapterId/reader" element={<ProtectedRoute><ChapterReader /></ProtectedRoute>} />
           <Route path="/project/:projectId" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>}>
-            <Route index element={<Navigate to="sponsor" replace />} />
+            <Route index element={<Navigate to="world-setting" replace />} />
             <Route path="world-setting" element={<WorldSetting />} />
             <Route path="careers" element={<Careers />} />
             <Route path="outline" element={<Outline />} />
@@ -71,7 +69,6 @@ function App() {
             <Route path="prompt-workshop" element={<PromptWorkshop />} />
             <Route path="skill-chat" element={<SkillChat />} />
             <Route path="skill-manage" element={<SkillManage />} />
-            <Route path="sponsor" element={<Sponsor />} />
             {/* <Route path="polish" element={<Polish />} /> */}
           </Route>
         </Routes>

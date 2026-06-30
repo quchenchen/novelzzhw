@@ -361,6 +361,12 @@ export default function SettingsPage() {
     },
     { value: 'gemini', label: 'Google Gemini', defaultUrl: 'https://generativelanguage.googleapis.com/v1beta' },
     { value: 'grok', label: 'Grok', defaultUrl: 'https://api.x.ai/v1' },
+    {
+      value: 'grsai',
+      label: 'GrsAI (图片模式)',
+      defaultUrl: 'https://grsaiapi.com/v1',
+      defaultModel: 'gpt-image-2',
+    },
   ];
 
   const handleCoverProviderChange = (value: string) => {
@@ -377,6 +383,9 @@ export default function SettingsPage() {
     if (provider.value === 'mumu') {
       nextValues.cover_api_key = '';
       nextValues.cover_image_model = provider.defaultModel || mumuCoverBaseUrlOptions[0].defaultModel;
+    } else if (provider.value === 'grsai') {
+      nextValues.cover_api_key = '';
+      nextValues.cover_image_model = provider.defaultModel || 'gpt-image-2';
     }
 
     form.setFieldsValue(nextValues);
